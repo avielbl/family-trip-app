@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BookOpen, CheckCircle, Camera, Copy, Check } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
