@@ -161,6 +161,11 @@ export interface QuizAnswer {
   correct: boolean;
 }
 
+export interface DiaryNote {
+  dayIndex: number;
+  text: string;
+}
+
 export interface TripDay {
   dayIndex: number; // 0-based
   date: string; // ISO date

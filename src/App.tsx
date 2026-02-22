@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { TripProvider, useTripContext } from './context/TripContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
 import FlightsPage from './pages/FlightsPage';
@@ -13,6 +14,7 @@ import QuizPage from './pages/QuizPage';
 import PackingPage from './pages/PackingPage';
 import SettingsPage from './pages/SettingsPage';
 import SetupPage from './pages/SetupPage';
+import DiaryPage from './pages/DiaryPage';
 import './i18n';
 
 function AppRoutes() {
@@ -54,6 +56,7 @@ function AppRoutes() {
         <Route path="/photos" element={<PhotosPage />} />
         <Route path="/quiz" element={<QuizPage />} />
         <Route path="/packing" element={<PackingPage />} />
+        <Route path="/diary" element={<DiaryPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
@@ -65,9 +68,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <TripProvider>
-        <AppRoutes />
-      </TripProvider>
+      <ThemeProvider>
+        <TripProvider>
+          <AppRoutes />
+        </TripProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

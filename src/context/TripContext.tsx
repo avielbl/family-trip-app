@@ -12,6 +12,7 @@ import type {
   PackingItem,
   PhotoEntry,
   QuizAnswer,
+  DiaryNote,
   FamilyMember,
 } from '../types/trip';
 import {
@@ -25,6 +26,7 @@ import {
   subscribePackingItems,
   subscribePhotos,
   subscribeQuizAnswers,
+  subscribeDiaryNotes,
   getTripConfig,
   joinTrip,
 } from '../firebase/tripService';
@@ -44,6 +46,7 @@ interface TripContextType {
   packingItems: PackingItem[];
   photos: PhotoEntry[];
   quizAnswers: QuizAnswer[];
+  diaryNotes: DiaryNote[];
   loading: boolean;
   error: string | null;
   setTripCode: (code: string) => Promise<boolean>;
@@ -78,6 +81,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [packingItems, setPackingItems] = useState<PackingItem[]>([]);
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
+  const [diaryNotes, setDiaryNotes] = useState<DiaryNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -161,6 +165,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     unsubs.push(subscribePackingItems(tripCode, setPackingItems));
     unsubs.push(subscribePhotos(tripCode, setPhotos));
     unsubs.push(subscribeQuizAnswers(tripCode, setQuizAnswers));
+    unsubs.push(subscribeDiaryNotes(tripCode, setDiaryNotes));
 
     return () => unsubs.forEach((u) => u());
   }, [tripCode, authReady]);
@@ -197,6 +202,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         packingItems,
         photos,
         quizAnswers,
+        diaryNotes,
         loading,
         error,
         setTripCode: handleSetTripCode,

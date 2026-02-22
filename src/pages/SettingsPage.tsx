@@ -1,11 +1,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, Globe, User, Info, Calendar } from 'lucide-react';
+import { Settings, Globe, User, Info, Calendar, Moon } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
+import { useTheme } from '../context/ThemeContext';
 
 const SettingsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { config, currentMember, setCurrentMember, tripCode } = useTripContext();
+  const { isDark, toggleDark } = useTheme();
 
   const currentLang = i18n.language;
 
@@ -62,6 +64,27 @@ const SettingsPage: React.FC = () => {
               </span>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <label className="settings-label">
+          <Moon size={18} />
+          {t('settings.darkMode')}
+        </label>
+        <div className="lang-toggle">
+          <button
+            className={!isDark ? 'active' : ''}
+            onClick={() => isDark && toggleDark()}
+          >
+            ☀️ Light
+          </button>
+          <button
+            className={isDark ? 'active' : ''}
+            onClick={() => !isDark && toggleDark()}
+          >
+            🌙 Dark
+          </button>
         </div>
       </section>
 

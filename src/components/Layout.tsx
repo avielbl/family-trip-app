@@ -14,8 +14,12 @@ import {
   Settings,
   Menu,
   X,
+  BookOpen,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 
 const navItems = [
   { path: '/', icon: Home, labelKey: 'nav.home' },
@@ -28,6 +32,7 @@ const navItems = [
   { path: '/photos', icon: Camera, labelKey: 'nav.photos' },
   { path: '/quiz', icon: HelpCircle, labelKey: 'nav.quiz' },
   { path: '/packing', icon: CheckSquare, labelKey: 'nav.packing' },
+  { path: '/diary', icon: BookOpen, labelKey: 'nav.diary' },
   { path: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
 
@@ -37,6 +42,7 @@ export default function Layout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const isRTL = i18n.language === 'he';
+  const { isDark, toggleDark } = useTheme();
 
   return (
     <div
@@ -50,16 +56,25 @@ export default function Layout() {
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
         <h1 className="top-title">{t('app.title')}</h1>
-        <button
-          className="lang-btn"
-          onClick={() => {
-            const newLang = i18n.language === 'he' ? 'en' : 'he';
-            i18n.changeLanguage(newLang);
-            localStorage.setItem('tripLang', newLang);
-          }}
-        >
-          {i18n.language === 'he' ? 'EN' : 'עב'}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            className="menu-btn"
+            onClick={toggleDark}
+            aria-label="Toggle dark mode"
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            className="lang-btn"
+            onClick={() => {
+              const newLang = i18n.language === 'he' ? 'en' : 'he';
+              i18n.changeLanguage(newLang);
+              localStorage.setItem('tripLang', newLang);
+            }}
+          >
+            {i18n.language === 'he' ? 'EN' : 'עב'}
+          </button>
+        </div>
       </header>
 
       {/* Side Menu */}

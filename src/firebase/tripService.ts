@@ -23,6 +23,7 @@ import type {
   PackingItem,
   PhotoEntry,
   QuizAnswer,
+  DiaryNote,
 } from '../types/trip';
 
 // Auth
@@ -256,6 +257,21 @@ export function subscribeQuizAnswers(
   const colRef = collection(db, 'trips', tripCode, 'quizAnswers');
   return onSnapshot(colRef, (snap) => {
     callback(snap.docs.map((d) => d.data() as QuizAnswer));
+  });
+}
+
+// Diary Notes
+export async function saveDiaryNote(tripCode: string, dayIndex: number, text: string): Promise<void> {
+  await setDoc(doc(db, 'trips', tripCode, 'diary', String(dayIndex)), { dayIndex, text });
+}
+
+export function subscribeDiaryNotes(
+  tripCode: string,
+  callback: (notes: DiaryNote[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'trips', tripCode, 'diary');
+  return onSnapshot(colRef, (snap) => {
+    callback(snap.docs.map((d) => d.data() as DiaryNote));
   });
 }
 
