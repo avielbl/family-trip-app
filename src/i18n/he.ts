@@ -137,6 +137,8 @@ export default {
     title: 'הגדרות',
     language: 'שפה',
     darkMode: 'מצב לילה',
+    importData: 'ייבוא נתוני טיול',
+    importFlightsHotels: 'העלאת אישורי טיסות ומלונות',
     member: 'מי אתה?',
     tripCode: 'קוד טיול',
     about: 'אודות',

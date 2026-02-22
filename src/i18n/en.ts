@@ -137,6 +137,8 @@ export default {
     title: 'Settings',
     language: 'Language',
     darkMode: 'Dark Mode',
+    importData: 'Import Trip Data',
+    importFlightsHotels: 'Upload flights & hotels confirmations',
     member: 'Who are you?',
     tripCode: 'Trip Code',
     about: 'About',

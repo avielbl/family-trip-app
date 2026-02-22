@@ -12,7 +12,10 @@ export default function SetupPage() {
   const { setTripCode, tripCode } = useTripContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [mode, setMode] = useState<'choice' | 'join' | 'create' | 'upload'>('choice');
+  // If already in a trip, go straight to the import screen
+  const [mode, setMode] = useState<'choice' | 'join' | 'create' | 'upload'>(
+    tripCode ? 'upload' : 'choice'
+  );
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [newTripCode, setNewTripCode] = useState('');
@@ -331,7 +334,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
     );
   }
 
-  // Upload screen (after trip created)
+  // Upload screen (after trip created, or re-opened for existing trip)
   if (mode === 'upload') {
     return (
       <div className="setup-page">
@@ -413,7 +416,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
           )}
 
           <button className="setup-btn secondary" onClick={() => navigate('/')}>
-            {isHe ? 'דלג והמשך' : 'Skip & Continue'}
+            {isHe ? 'חזרה לאפליקציה' : 'Back to App'}
           </button>
         </div>
       </div>

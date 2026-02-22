@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, Globe, User, Info, Calendar, Moon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Settings, Globe, User, Info, Calendar, Moon, Upload } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -8,6 +9,7 @@ const SettingsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { config, currentMember, setCurrentMember, tripCode } = useTripContext();
   const { isDark, toggleDark } = useTheme();
+  const navigate = useNavigate();
 
   const currentLang = i18n.language;
 
@@ -86,6 +88,21 @@ const SettingsPage: React.FC = () => {
             🌙 Dark
           </button>
         </div>
+      </section>
+
+      <section className="settings-section">
+        <label className="settings-label">
+          <Upload size={18} />
+          {t('settings.importData')}
+        </label>
+        <button
+          className="setup-btn primary"
+          style={{ width: '100%' }}
+          onClick={() => navigate('/setup')}
+        >
+          <Upload size={16} />
+          {t('settings.importFlightsHotels')}
+        </button>
       </section>
 
       <section className="settings-section">
