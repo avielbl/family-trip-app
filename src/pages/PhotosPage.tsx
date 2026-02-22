@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Camera, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { savePhoto } from '../firebase/tripService';
-import type { PhotoEntry } from '../types/trip';
 
 const TOTAL_DAYS = 12;
 
@@ -59,15 +58,14 @@ const PhotosPage: React.FC = () => {
 
     setSaving(true);
     try {
-      const photo: PhotoEntry = {
+      await savePhoto(tripCode, {
         id: crypto.randomUUID(),
         dayIndex: selectedDay,
         memberId: currentMember.id,
         imageDataUrl: previewImage,
         caption: caption.trim() || undefined,
         timestamp: new Date().toISOString(),
-      };
-      await savePhoto(tripCode, photo);
+      });
       setShowPreview(false);
       setPreviewImage(null);
       setCaption('');
@@ -199,7 +197,7 @@ const PhotosPage: React.FC = () => {
             return (
               <div key={photo.id} className="photo-card">
                 <img
-                  src={photo.imageDataUrl}
+                  src={photo.imageUrl}
                   alt={photo.caption || 'Photo'}
                   className="photo-img"
                 />

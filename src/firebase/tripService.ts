@@ -8,8 +8,9 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { Unsubscribe } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { signInAnonymously } from 'firebase/auth';
-import { db, auth } from './config';
+import { db, auth, storage } from './config';
 import type {
   TripConfig,
   TripDay,
@@ -216,8 +217,20 @@ export function subscribePackingItems(
 }
 
 // Photos
-export async function savePhoto(tripCode: string, photo: PhotoEntry): Promise<void> {
-  await setDoc(doc(db, 'trips', tripCode, 'photos', photo.id), photo);
+export async function savePhoto(
+  tripCode: string,
+  photo: Omit<PhotoEntry, 'imageUrl'> & { imageDataUrl: string }
+): Promise<void> {
+  // Upload the image to Firebase Storage and store the URL in Firestore
+  const storageRef = ref(storage, `trips/${tripCode}/photos/${photo.id}`);
+  await uploadString(storageRef, photo.imageDataUrl, 'data_url');
+  const imageUrl = await getDownloadURL(storageRef);
+
+  const { imageDataUrl: _, ...photoMeta } = photo;
+  await setDoc(doc(db, 'trips', tripCode, 'photos', photo.id), {
+    ...photoMeta,
+    imageUrl,
+  });
 }
 
 export function subscribePhotos(

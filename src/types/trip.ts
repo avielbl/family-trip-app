@@ -136,7 +136,7 @@ export interface PhotoEntry {
   id: string;
   dayIndex: number;
   memberId: string;
-  imageDataUrl: string; // base64
+  imageUrl: string; // Firebase Storage download URL
   caption?: string;
   captionHe?: string;
   timestamp: string;
