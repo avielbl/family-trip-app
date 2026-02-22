@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Trip documents - anyone authenticated can read/write their trip
+    match /trips/{tripCode} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+
+      // All subcollections under a trip
+      match /{subcollection}/{document} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+    }
+  }
+}
