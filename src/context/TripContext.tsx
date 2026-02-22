@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import type {
   TripConfig,
   TripDay,
@@ -27,6 +28,7 @@ import {
   getTripConfig,
   joinTrip,
 } from '../firebase/tripService';
+import { auth } from '../firebase/config';
 
 interface TripContextType {
   tripCode: string | null;
@@ -78,6 +80,27 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  // Ensure the user is authenticated before any Firestore access.
+  // On a fresh page load the stored tripCode is available immediately but
+  // signInAnonymously hasn't been called yet, which causes permission errors.
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setAuthReady(true);
+      } else if (localStorage.getItem('tripCode')) {
+        // Re-authenticate anonymously when we have a stored session
+        signInAnonymously(auth).catch((err) => {
+          console.error('Anonymous sign-in failed:', err);
+          setAuthReady(true); // still unblock so error surfaces
+        });
+      } else {
+        setAuthReady(true);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Restore member from localStorage
   useEffect(() => {
@@ -109,8 +132,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Subscribe to all data when tripCode is set
+  // Subscribe to all data when tripCode is set and auth is ready
   useEffect(() => {
+    if (!authReady) return;
     if (!tripCode) {
       setLoading(false);
       return;
@@ -139,7 +163,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     unsubs.push(subscribeQuizAnswers(tripCode, setQuizAnswers));
 
     return () => unsubs.forEach((u) => u());
-  }, [tripCode]);
+  }, [tripCode, authReady]);
 
   // Trip date calculations
   const tripStart = config ? new Date(config.startDate) : new Date('2026-03-24');
