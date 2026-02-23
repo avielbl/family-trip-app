@@ -11,7 +11,28 @@
     <title>Greece Trip 2026 | טיול יוון</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Fallback: shown only if JS fails to execute -->
+      <div id="js-fallback" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;padding:24px;text-align:center;font-family:sans-serif;background:linear-gradient(135deg,#eff6ff,#f0f9ff)">
+        <div style="font-size:56px">🇬🇷</div>
+        <h2 style="color:#1e40af;font-size:18px">Loading...</h2>
+        <p id="js-error-msg" style="color:#64748b;font-size:13px;max-width:300px;line-height:1.5"></p>
+      </div>
+    </div>
+    <script>
+      window.onerror = function(msg, src, line, col, err) {
+        var el = document.getElementById('js-error-msg');
+        if (el) el.textContent = (err && err.message ? err.message : msg) + (src ? ' (' + src.split('/').pop() + ':' + line + ')' : '');
+        var h = document.querySelector('#js-fallback h2');
+        if (h) h.textContent = 'Failed to load app';
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('js-error-msg');
+        if (el && e.reason) el.textContent = e.reason.message || String(e.reason);
+        var h = document.querySelector('#js-fallback h2');
+        if (h) h.textContent = 'Failed to load app';
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
