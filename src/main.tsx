@@ -58,10 +58,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-// Remove the HTML fallback — React is about to take over
-const jsFallback = document.getElementById('js-fallback');
-if (jsFallback) jsFallback.remove();
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>

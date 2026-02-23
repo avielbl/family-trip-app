@@ -5,7 +5,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { initializeAuth, inMemoryPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -17,10 +17,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
+// True when all required env vars are present
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId
+);
+
 const app = initializeApp(firebaseConfig);
 
-// Use the modern persistent cache API with graceful fallback
-// (persistentMultipleTabManager requires SharedArrayBuffer / specific browser support)
 function initDb() {
   try {
     return initializeFirestore(app, {
@@ -29,7 +32,6 @@ function initDb() {
       }),
     });
   } catch {
-    // Fall back to memory cache if IndexedDB or SharedArrayBuffer not available
     try {
       return initializeFirestore(app, {
         localCache: persistentLocalCache({}),
@@ -40,8 +42,22 @@ function initDb() {
   }
 }
 
+function initAuth() {
+  // Try browser-local persistence first; fall back to in-memory.
+  // In-memory persistence means Firebase will NOT try to restore a cached
+  // auth token on page load, which prevents auth/invalid-api-key from
+  // crashing the app when secrets are misconfigured.
+  try {
+    return initializeAuth(app, {
+      persistence: [browserLocalPersistence, inMemoryPersistence],
+    });
+  } catch {
+    return initializeAuth(app, { persistence: inMemoryPersistence });
+  }
+}
+
 export const db = initDb();
-export const auth = getAuth(app);
+export const auth = initAuth();
 export const storage = getStorage(app);
 
 export default app;

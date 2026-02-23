@@ -27,6 +27,7 @@ import {
   getTripConfig,
   joinTrip,
 } from '../firebase/tripService';
+import { isFirebaseConfigured } from '../firebase/config';
 
 interface TripContextType {
   tripCode: string | null;
@@ -111,6 +112,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
   // Subscribe to all data when tripCode is set
   useEffect(() => {
+    if (!isFirebaseConfigured) {
+      setError('Firebase is not configured. Please set the VITE_FIREBASE_* environment variables (GitHub Secrets) and redeploy.');
+      setLoading(false);
+      return;
+    }
     if (!tripCode) {
       setLoading(false);
       return;

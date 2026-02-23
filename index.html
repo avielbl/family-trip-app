@@ -11,26 +11,31 @@
     <title>Greece Trip 2026 | טיול יוון</title>
   </head>
   <body>
-    <div id="root">
-      <!-- Fallback: shown only if JS fails to execute -->
-      <div id="js-fallback" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;padding:24px;text-align:center;font-family:sans-serif;background:linear-gradient(135deg,#eff6ff,#f0f9ff)">
-        <div style="font-size:56px">🇬🇷</div>
-        <h2 style="color:#1e40af;font-size:18px">Loading...</h2>
-        <p id="js-error-msg" style="color:#64748b;font-size:13px;max-width:300px;line-height:1.5"></p>
-      </div>
+    <div id="root"></div>
+
+    <!--
+      Error overlay — lives OUTSIDE #root so React mounting never removes it.
+      Hidden by default; shown only when onerror / unhandledrejection fires.
+    -->
+    <div id="js-error-overlay" style="display:none;position:fixed;inset:0;z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;font-family:sans-serif;background:linear-gradient(135deg,#eff6ff,#f0f9ff)">
+      <div style="font-size:56px">🇬🇷</div>
+      <h2 style="color:#1e40af;font-size:18px;margin:0">App failed to load</h2>
+      <p id="js-error-msg" style="color:#64748b;font-size:13px;max-width:320px;line-height:1.6;margin:0"></p>
+      <button onclick="location.reload()" style="padding:10px 24px;background:#1e40af;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">Retry</button>
     </div>
+
     <script>
-      window.onerror = function(msg, src, line, col, err) {
+      function showError(msg) {
+        var overlay = document.getElementById('js-error-overlay');
         var el = document.getElementById('js-error-msg');
-        if (el) el.textContent = (err && err.message ? err.message : msg) + (src ? ' (' + src.split('/').pop() + ':' + line + ')' : '');
-        var h = document.querySelector('#js-fallback h2');
-        if (h) h.textContent = 'Failed to load app';
+        if (overlay) overlay.style.display = 'flex';
+        if (el) el.textContent = msg;
+      }
+      window.onerror = function(msg, src, line, col, err) {
+        showError((err && err.message ? err.message : msg) + (src ? ' (' + src.split('/').pop() + ':' + line + ')' : ''));
       };
       window.addEventListener('unhandledrejection', function(e) {
-        var el = document.getElementById('js-error-msg');
-        if (el && e.reason) el.textContent = e.reason.message || String(e.reason);
-        var h = document.querySelector('#js-fallback h2');
-        if (h) h.textContent = 'Failed to load app';
+        if (e.reason) showError(e.reason.message || String(e.reason));
       });
     </script>
     <script type="module" src="/src/main.tsx"></script>
