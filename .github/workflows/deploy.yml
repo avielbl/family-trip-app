@@ -2,7 +2,7 @@ name: Deploy to Firebase Hosting
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/fix-blank-page-redesign-N4cGO]
   workflow_dispatch:
 
 jobs:
