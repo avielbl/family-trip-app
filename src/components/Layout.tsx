@@ -47,9 +47,9 @@ export default function Layout() {
       {/* Top Bar */}
       <header className="top-bar">
         <button className="menu-btn" onClick={() => setMenuOpen(!menuOpen)}>
-          {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          {menuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
-        <h1 className="top-title">{t('app.title')}</h1>
+        <h1 className="top-title">🇬🇷 {t('app.title')}</h1>
         <button
           className="lang-btn"
           onClick={() => {

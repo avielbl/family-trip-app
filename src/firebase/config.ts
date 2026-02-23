@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import {
   initializeFirestore,
+  getFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
@@ -18,13 +19,28 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Use the modern persistent cache API (replaces deprecated enableIndexedDbPersistence)
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
-});
+// Use the modern persistent cache API with graceful fallback
+// (persistentMultipleTabManager requires SharedArrayBuffer / specific browser support)
+function initDb() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // Fall back to memory cache if IndexedDB or SharedArrayBuffer not available
+    try {
+      return initializeFirestore(app, {
+        localCache: persistentLocalCache({}),
+      });
+    } catch {
+      return getFirestore(app);
+    }
+  }
+}
 
+export const db = initDb();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
