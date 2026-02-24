@@ -5,7 +5,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
-import { initializeAuth, inMemoryPersistence, browserLocalPersistence } from 'firebase/auth';
+import { initializeAuth, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -17,7 +17,7 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
-// True when all required env vars are present
+// All three values must be present for Firebase to work at all.
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId
 );
@@ -27,37 +27,39 @@ const app = initializeApp(firebaseConfig);
 function initDb() {
   try {
     return initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   } catch {
     try {
-      return initializeFirestore(app, {
-        localCache: persistentLocalCache({}),
-      });
+      return initializeFirestore(app, { localCache: persistentLocalCache({}) });
     } catch {
       return getFirestore(app);
     }
   }
 }
 
-function initAuth() {
-  // Try browser-local persistence first; fall back to in-memory.
-  // In-memory persistence means Firebase will NOT try to restore a cached
-  // auth token on page load, which prevents auth/invalid-api-key from
-  // crashing the app when secrets are misconfigured.
-  try {
-    return initializeAuth(app, {
-      persistence: [browserLocalPersistence, inMemoryPersistence],
-    });
-  } catch {
-    return initializeAuth(app, { persistence: inMemoryPersistence });
-  }
-}
-
 export const db = initDb();
-export const auth = initAuth();
-export const storage = getStorage(app);
+
+// Auth and Storage are only initialised when credentials are valid.
+// initializeAuth makes an immediate network call to validate the API key;
+// calling it with an invalid key throws auth/invalid-api-key and crashes
+// the app before React can mount.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const auth: ReturnType<typeof initializeAuth> = isFirebaseConfigured
+  ? (() => {
+      try {
+        return initializeAuth(app, {
+          persistence: [browserLocalPersistence, inMemoryPersistence],
+        });
+      } catch {
+        return initializeAuth(app, { persistence: inMemoryPersistence });
+      }
+    })()
+  : (null as any);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const storage: ReturnType<typeof getStorage> = isFirebaseConfigured
+  ? getStorage(app)
+  : (null as any);
 
 export default app;

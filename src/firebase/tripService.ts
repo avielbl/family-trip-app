@@ -26,6 +26,12 @@ import type {
 } from '../types/trip';
 
 // Auth
+async function ensureSignedIn(): Promise<void> {
+  if (!auth.currentUser) {
+    await signInAnonymously(auth);
+  }
+}
+
 export async function joinTrip(tripCode: string): Promise<boolean> {
   await signInAnonymously(auth);
   const tripRef = doc(db, 'trips', tripCode);
@@ -40,6 +46,7 @@ export async function getTripConfig(tripCode: string): Promise<TripConfig | null
 }
 
 export async function saveTripConfig(config: TripConfig): Promise<void> {
+  await ensureSignedIn();
   await setDoc(doc(db, 'trips', config.tripCode), config);
 }
 
@@ -274,6 +281,7 @@ export async function importTripData(
     packing?: PackingItem[];
   }
 ): Promise<void> {
+  await ensureSignedIn();
   if (data.config) await saveTripConfig(data.config);
   if (data.days) await saveTripDays(tripCode, data.days);
 
