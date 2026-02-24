@@ -6,11 +6,11 @@ import {
   onSnapshot,
   updateDoc,
   writeBatch,
+  deleteDoc,
 } from 'firebase/firestore';
 import type { Unsubscribe } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { signInAnonymously } from 'firebase/auth';
-import { db, auth, storage } from './config';
+import { db, storage } from './config';
 import type {
   TripConfig,
   TripDay,
@@ -23,11 +23,10 @@ import type {
   PackingItem,
   PhotoEntry,
   QuizAnswer,
+  TravelLogEntry,
 } from '../types/trip';
 
-// Auth
 export async function joinTrip(tripCode: string): Promise<boolean> {
-  await signInAnonymously(auth);
   const tripRef = doc(db, 'trips', tripCode);
   const tripDoc = await getDoc(tripRef);
   return tripDoc.exists();
@@ -256,6 +255,60 @@ export function subscribeQuizAnswers(
   const colRef = collection(db, 'trips', tripCode, 'quizAnswers');
   return onSnapshot(colRef, (snap) => {
     callback(snap.docs.map((d) => d.data() as QuizAnswer));
+  });
+}
+
+// Delete helpers
+export async function deleteFlight(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'flights', id));
+}
+
+export async function deleteHotel(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'hotels', id));
+}
+
+export async function deleteDrivingSegment(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'driving', id));
+}
+
+export async function deleteRentalCar(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'rentalCars', id));
+}
+
+export async function deleteHighlight(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'highlights', id));
+}
+
+export async function deleteRestaurant(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'restaurants', id));
+}
+
+export async function deletePackingItem(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'packing', id));
+}
+
+// Travel Log
+export async function saveTravelLogEntry(
+  tripCode: string,
+  entry: TravelLogEntry
+): Promise<void> {
+  await setDoc(doc(db, 'trips', tripCode, 'travelLog', entry.id), entry);
+}
+
+export async function deleteTravelLogEntry(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'travelLog', id));
+}
+
+export function subscribeTravelLog(
+  tripCode: string,
+  callback: (entries: TravelLogEntry[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'trips', tripCode, 'travelLog');
+  return onSnapshot(colRef, (snap) => {
+    const entries = snap.docs
+      .map((d) => d.data() as TravelLogEntry)
+      .sort((a, b) => a.dayIndex - b.dayIndex);
+    callback(entries);
   });
 }
 

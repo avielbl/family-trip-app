@@ -20,9 +20,8 @@ export default function SetupPage() {
   const [members, setMembers] = useState<Partial<FamilyMember>[]>([
     { name: '', nameHe: '', emoji: '👨', deviceType: 'phone' },
     { name: '', nameHe: '', emoji: '👩', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '👦', deviceType: 'phone' },
     { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '👶', deviceType: 'tablet' },
+    { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
     { name: '', nameHe: '', emoji: '👶', deviceType: 'tablet' },
   ]);
   const [files, setFiles] = useState<File[]>([]);

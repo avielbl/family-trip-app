@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UtensilsCrossed, Star, MapPin, Phone, ExternalLink, DollarSign } from 'lucide-react';
+import { UtensilsCrossed, Star, MapPin, Phone, ExternalLink, DollarSign, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
-import { rateRestaurant } from '../firebase/tripService';
+import { rateRestaurant, saveRestaurant, deleteRestaurant } from '../firebase/tripService';
+import type { Restaurant } from '../types/trip';
+
+function emptyRestaurant(): Restaurant {
+  return { id: `rest-${Date.now()}`, name: '', ratings: {}, visited: false };
+}
 
 type FilterTab = 'all' | 'visited' | 'notVisited';
 
 const RestaurantsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { restaurants, tripCode, currentMember } = useTripContext();
+  const { restaurants, tripCode, currentMember, isAdmin } = useTripContext();
+  const [editItem, setEditItem] = useState<Restaurant | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [hoveredStars, setHoveredStars] = useState<Record<string, number>>({});
 
@@ -79,11 +85,28 @@ const RestaurantsPage: React.FC = () => {
     );
   };
 
+  async function handleSave(r: Restaurant) {
+    if (!tripCode) return;
+    await saveRestaurant(tripCode, r);
+    setEditItem(null);
+  }
+
+  async function handleDelete(id: string) {
+    if (!tripCode) return;
+    if (!confirm(isHebrew ? 'למחוק מסעדה זו?' : 'Delete this restaurant?')) return;
+    await deleteRestaurant(tripCode, id);
+  }
+
   return (
     <div className="restaurants-page" dir={isHebrew ? 'rtl' : 'ltr'}>
-      <div className="page-header">
-        <UtensilsCrossed size={28} />
-        <h1>{t('restaurants.title')}</h1>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+        <UtensilsCrossed size={24} />
+        <h1 className="page-title" style={{ margin: 0 }}>{t('restaurants.title')}</h1>
+        {isAdmin && (
+          <button className="admin-icon-btn add" style={{ marginInlineStart: 'auto' }} onClick={() => setEditItem(emptyRestaurant())}>
+            <Plus size={14} /> {isHebrew ? 'הוסף' : 'Add'}
+          </button>
+        )}
       </div>
 
       <div className="filter-tabs">
@@ -172,13 +195,75 @@ const RestaurantsPage: React.FC = () => {
                     {restaurant.phone}
                   </a>
                 )}
+                {isAdmin && (
+                  <>
+                    <button className="admin-icon-btn edit" onClick={() => setEditItem(restaurant)}>
+                      <Pencil size={13} />
+                    </button>
+                    <button className="admin-icon-btn delete" onClick={() => handleDelete(restaurant.id)}>
+                      <Trash2 size={13} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {editItem && (
+        <RestaurantModal
+          restaurant={editItem}
+          isHe={isHebrew}
+          onSave={handleSave}
+          onClose={() => setEditItem(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 };
+
+function RestaurantModal({ restaurant, isHe, onSave, onClose, t }: {
+  restaurant: Restaurant; isHe: boolean;
+  onSave: (r: Restaurant) => void; onClose: () => void;
+  t: (k: string) => string;
+}) {
+  const [form, setForm] = useState({ ...restaurant });
+  function set(field: keyof Restaurant, value: string | boolean) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">{isHe ? (restaurant.name ? 'ערוך מסעדה' : 'הוסף מסעדה') : (restaurant.name ? 'Edit Restaurant' : 'Add Restaurant')}</div>
+        {([
+          ['name', isHe ? 'שם' : 'Name'],
+          ['nameHe', isHe ? 'שם בעברית' : 'Name (Hebrew)'],
+          ['cuisine', isHe ? 'מטבח' : 'Cuisine'],
+          ['city', isHe ? 'עיר' : 'City'],
+          ['address', isHe ? 'כתובת' : 'Address'],
+          ['phone', isHe ? 'טלפון' : 'Phone'],
+          ['notes', isHe ? 'הערות' : 'Notes'],
+        ] as [keyof Restaurant, string][]).map(([field, label]) => (
+          <div className="form-group" key={field}>
+            <label className="form-label">{label}</label>
+            <input className="form-input" value={(form as any)[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
+          </div>
+        ))}
+        <div className="form-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={form.visited} onChange={(e) => set('visited', e.target.checked)} />
+            {isHe ? 'ביקרנו' : 'Visited'}
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button className="admin-btn secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="admin-btn primary" onClick={() => onSave(form)}>{t('common.save')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default RestaurantsPage;

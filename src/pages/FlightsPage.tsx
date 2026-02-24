@@ -1,12 +1,31 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plane, Clock, MapPin, Terminal, Hash, FileText, ExternalLink } from 'lucide-react';
+import { Plane, Clock, MapPin, Terminal, Hash, FileText, ExternalLink, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
+import { saveFlight, deleteFlight } from '../firebase/tripService';
+import type { Flight } from '../types/trip';
+
+function emptyFlight(): Flight {
+  return {
+    id: `flight-${Date.now()}`,
+    dayIndex: 0,
+    airline: '',
+    flightNumber: '',
+    departureAirport: '',
+    departureAirportCode: '',
+    arrivalAirport: '',
+    arrivalAirportCode: '',
+    departureTime: '',
+    arrivalTime: '',
+  };
+}
 
 const FlightsPage: React.FC = () => {
-  const { t } = useTranslation();
-  const { flights } = useTripContext();
+  const { t, i18n } = useTranslation();
+  const { flights, tripCode, isAdmin } = useTripContext();
+  const [editItem, setEditItem] = useState<Flight | null>(null);
+  const isHe = i18n.language === 'he';
 
   const sortedFlights = useMemo(() => {
     return [...flights].sort(
@@ -30,9 +49,29 @@ const FlightsPage: React.FC = () => {
     }
   };
 
+  async function handleSave(f: Flight) {
+    if (!tripCode) return;
+    await saveFlight(tripCode, f);
+    setEditItem(null);
+  }
+
+  async function handleDelete(id: string) {
+    if (!tripCode) return;
+    if (!confirm(isHe ? 'למחוק טיסה זו?' : 'Delete this flight?')) return;
+    await deleteFlight(tripCode, id);
+  }
+
   return (
     <div className="flights-page">
-      <h1>{t('flights.title')}</h1>
+      <h1 className="page-title">{t('flights.title')}</h1>
+
+      {isAdmin && (
+        <div className="admin-add-bar">
+          <button className="admin-icon-btn add" onClick={() => setEditItem(emptyFlight())}>
+            <Plus size={14} /> {isHe ? 'הוסף טיסה' : 'Add Flight'}
+          </button>
+        </div>
+      )}
 
       <div className="flights-list">
         {sortedFlights.map((flight) => (
@@ -122,11 +161,72 @@ const FlightsPage: React.FC = () => {
                 <span>{t('flights.boardingPass')}</span>
               </a>
             )}
+
+            {isAdmin && (
+              <div className="admin-controls">
+                <button className="admin-icon-btn edit" onClick={() => setEditItem(flight)}>
+                  <Pencil size={13} /> {t('common.edit')}
+                </button>
+                <button className="admin-icon-btn delete" onClick={() => handleDelete(flight.id)}>
+                  <Trash2 size={13} /> {t('common.delete')}
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
+
+      {editItem && (
+        <FlightModal
+          flight={editItem}
+          isHe={isHe}
+          onSave={handleSave}
+          onClose={() => setEditItem(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 };
+
+function FlightModal({ flight, isHe, onSave, onClose, t }: {
+  flight: Flight; isHe: boolean;
+  onSave: (f: Flight) => void; onClose: () => void;
+  t: (k: string) => string;
+}) {
+  const [form, setForm] = useState({ ...flight });
+  function set(field: keyof Flight, value: string | number) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">{isHe ? (flight.airline ? 'ערוך טיסה' : 'הוסף טיסה') : (flight.airline ? 'Edit Flight' : 'Add Flight')}</div>
+        {([
+          ['airline', isHe ? 'חברת תעופה' : 'Airline'],
+          ['flightNumber', isHe ? 'מספר טיסה' : 'Flight Number'],
+          ['departureAirport', isHe ? 'שדה תעופה יציאה' : 'Departure Airport'],
+          ['departureAirportCode', isHe ? 'קוד יציאה' : 'Dep. Code'],
+          ['arrivalAirport', isHe ? 'שדה תעופה הגעה' : 'Arrival Airport'],
+          ['arrivalAirportCode', isHe ? 'קוד הגעה' : 'Arr. Code'],
+          ['departureTime', isHe ? 'זמן יציאה (ISO)' : 'Departure Time (ISO)'],
+          ['arrivalTime', isHe ? 'זמן הגעה (ISO)' : 'Arrival Time (ISO)'],
+          ['terminal', isHe ? 'טרמינל' : 'Terminal'],
+          ['gate', isHe ? 'שער' : 'Gate'],
+          ['confirmationCode', isHe ? 'קוד אישור' : 'Confirmation Code'],
+        ] as [keyof Flight, string][]).map(([field, label]) => (
+          <div className="form-group" key={field}>
+            <label className="form-label">{label}</label>
+            <input className="form-input" value={(form as any)[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
+          </div>
+        ))}
+        <div className="modal-actions">
+          <button className="admin-btn secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="admin-btn primary" onClick={() => onSave(form)}>{t('common.save')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default FlightsPage;

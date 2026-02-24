@@ -1,13 +1,73 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Trip documents - anyone authenticated can read/write their trip
+
+    // Helper: check if user is the trip admin
+    function isAdmin(tripCode) {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/trips/$(tripCode)).data.adminUid == request.auth.uid;
+    }
+
+    // User profiles — each user can only read/write their own
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Trip config
     match /trips/{tripCode} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      // Write trip config: admin or during initial creation (no adminUid set yet)
+      allow write: if request.auth != null && (
+        !('adminUid' in resource.data) ||
+        resource.data.adminUid == null ||
+        resource.data.adminUid == request.auth.uid
+      );
 
-      // All subcollections under a trip
-      match /{subcollection}/{document} {
+      // Itinerary subcollections — admin writes, member reads
+      match /days/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /flights/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /hotels/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /driving/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /rentalCars/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /highlights/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /restaurants/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /packing/{doc} {
+        allow read: if request.auth != null;
+        // Admin can add/delete items; all members can toggle checked
+        allow write: if request.auth != null;
+      }
+
+      // Member-generated content — any authenticated user
+      match /photos/{doc} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+      match /quizAnswers/{doc} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+      match /travelLog/{doc} {
         allow read: if request.auth != null;
         allow write: if request.auth != null;
       }

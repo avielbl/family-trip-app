@@ -12,6 +12,7 @@ import type {
   PhotoEntry,
   QuizAnswer,
   FamilyMember,
+  TravelLogEntry,
 } from '../types/trip';
 import {
   subscribeTripDays,
@@ -24,9 +25,11 @@ import {
   subscribePackingItems,
   subscribePhotos,
   subscribeQuizAnswers,
+  subscribeTravelLog,
   getTripConfig,
   joinTrip,
 } from '../firebase/tripService';
+import { useAuthContext } from './AuthContext';
 
 interface TripContextType {
   tripCode: string | null;
@@ -42,8 +45,10 @@ interface TripContextType {
   packingItems: PackingItem[];
   photos: PhotoEntry[];
   quizAnswers: QuizAnswer[];
+  travelLog: TravelLogEntry[];
   loading: boolean;
   error: string | null;
+  isAdmin: boolean;
   setTripCode: (code: string) => Promise<boolean>;
   setCurrentMember: (member: FamilyMember) => void;
   todayDayIndex: number;
@@ -61,11 +66,13 @@ export function useTripContext() {
 }
 
 export function TripProvider({ children }: { children: React.ReactNode }) {
+  const { firebaseUser, isAdmin, virtualMember } = useAuthContext();
+
   const [tripCode, setTripCodeState] = useState<string | null>(
     localStorage.getItem('tripCode')
   );
   const [config, setConfig] = useState<TripConfig | null>(null);
-  const [currentMember, setCurrentMemberState] = useState<FamilyMember | null>(null);
+  const [currentMemberState, setCurrentMemberState] = useState<FamilyMember | null>(null);
   const [days, setDays] = useState<TripDay[]>([]);
   const [flights, setFlights] = useState<Flight[]>([]);
   const [hotels, setHotels] = useState<Hotel[]>([]);
@@ -76,10 +83,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [packingItems, setPackingItems] = useState<PackingItem[]>([]);
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
+  const [travelLog, setTravelLog] = useState<TravelLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Restore member from localStorage
+  // Restore member from localStorage (for non-Google users)
   useEffect(() => {
     const saved = localStorage.getItem('currentMember');
     if (saved) {
@@ -88,6 +96,23 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
   }, []);
+
+  // When config loads, match firebaseUser email to a family member
+  useEffect(() => {
+    if (!config) return;
+    if (firebaseUser?.email) {
+      const matched = config.familyMembers.find((m) => m.email === firebaseUser.email);
+      if (matched) {
+        setCurrentMemberState(matched);
+        localStorage.setItem('currentMember', JSON.stringify(matched));
+        return;
+      }
+    }
+    // Fall back to virtual member (tablet) or saved member
+    if (virtualMember) {
+      setCurrentMemberState(virtualMember);
+    }
+  }, [config, firebaseUser, virtualMember]);
 
   const setCurrentMember = useCallback((member: FamilyMember) => {
     setCurrentMemberState(member);
@@ -137,9 +162,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     unsubs.push(subscribePackingItems(tripCode, setPackingItems));
     unsubs.push(subscribePhotos(tripCode, setPhotos));
     unsubs.push(subscribeQuizAnswers(tripCode, setQuizAnswers));
+    unsubs.push(subscribeTravelLog(tripCode, setTravelLog));
 
     return () => unsubs.forEach((u) => u());
   }, [tripCode]);
+
+  // Determine currentMember (Google-matched or manually selected)
+  const currentMember = currentMemberState;
 
   // Trip date calculations
   const tripStart = config ? new Date(config.startDate) : new Date('2026-03-24');
@@ -173,8 +202,10 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         packingItems,
         photos,
         quizAnswers,
+        travelLog,
         loading,
         error,
+        isAdmin,
         setTripCode: handleSetTripCode,
         setCurrentMember,
         todayDayIndex,

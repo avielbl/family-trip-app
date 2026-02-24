@@ -4,6 +4,7 @@ export interface TripConfig {
   startDate: string; // ISO date
   endDate: string;
   familyMembers: FamilyMember[];
+  adminUid?: string; // UID of admin user (set when admin first signs in)
 }
 
 export interface FamilyMember {
@@ -12,6 +13,40 @@ export interface FamilyMember {
   nameHe: string;
   emoji: string; // avatar emoji
   deviceType: 'phone' | 'tablet';
+  email?: string;      // for Google-auth matching
+  isVirtual?: boolean; // true for shared-tablet kids
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+  tripCode?: string;
+  memberId?: string; // matched FamilyMember.id
+  createdAt: string;
+}
+
+export interface ContentBlock {
+  id: string;
+  type: 'text' | 'photo';
+  content?: string;    // text content (for type='text')
+  contentHe?: string;
+  imageUrl?: string;   // Firebase Storage URL (for type='photo')
+  caption?: string;
+  captionHe?: string;
+  order: number;
+}
+
+export interface TravelLogEntry {
+  id: string;
+  dayIndex: number;
+  title: string;
+  titleHe?: string;
+  location: string;
+  blocks: ContentBlock[];
+  generatedAt?: string;
+  updatedAt: string;
 }
 
 export interface Flight {

@@ -11,14 +11,34 @@ import {
   Check,
   Hash,
   FileText,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
+import { saveHotel, deleteHotel } from '../firebase/tripService';
+import type { Hotel } from '../types/trip';
+
+function emptyHotel(): Hotel {
+  return {
+    id: `hotel-${Date.now()}`,
+    dayIndexStart: 0,
+    dayIndexEnd: 1,
+    name: '',
+    address: '',
+    city: '',
+    checkIn: '',
+    checkOut: '',
+  };
+}
 
 const HotelsPage: React.FC = () => {
-  const { t } = useTranslation();
-  const { hotels } = useTripContext();
+  const { t, i18n } = useTranslation();
+  const { hotels, tripCode, isAdmin } = useTripContext();
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editItem, setEditItem] = useState<Hotel | null>(null);
+  const isHe = i18n.language === 'he';
 
   const sortedHotels = useMemo(() => {
     return [...hotels].sort(
@@ -70,9 +90,29 @@ const HotelsPage: React.FC = () => {
     return `https://www.google.com/maps/search/?api=1&query=${query}`;
   };
 
+  async function handleSave(h: Hotel) {
+    if (!tripCode) return;
+    await saveHotel(tripCode, h);
+    setEditItem(null);
+  }
+
+  async function handleDelete(id: string) {
+    if (!tripCode) return;
+    if (!confirm(isHe ? 'למחוק מלון זה?' : 'Delete this hotel?')) return;
+    await deleteHotel(tripCode, id);
+  }
+
   return (
     <div className="hotels-page">
-      <h1>{t('hotels.title')}</h1>
+      <h1 className="page-title">{t('hotels.title')}</h1>
+
+      {isAdmin && (
+        <div className="admin-add-bar">
+          <button className="admin-icon-btn add" onClick={() => setEditItem(emptyHotel())}>
+            <Plus size={14} /> {isHe ? 'הוסף מלון' : 'Add Hotel'}
+          </button>
+        </div>
+      )}
 
       <div className="hotels-list">
         {sortedHotels.map((hotel) => (
@@ -177,12 +217,65 @@ const HotelsPage: React.FC = () => {
                 <span>{t('hotels.navigate')}</span>
                 <ExternalLink size={14} />
               </a>
+
+              {isAdmin && (
+                <div className="admin-controls">
+                  <button className="admin-icon-btn edit" onClick={() => setEditItem(hotel)}>
+                    <Pencil size={13} /> {t('common.edit')}
+                  </button>
+                  <button className="admin-icon-btn delete" onClick={() => handleDelete(hotel.id)}>
+                    <Trash2 size={13} /> {t('common.delete')}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      {editItem && (
+        <HotelModal hotel={editItem} isHe={isHe} onSave={handleSave} onClose={() => setEditItem(null)} t={t} />
+      )}
     </div>
   );
 };
+
+function HotelModal({ hotel, isHe, onSave, onClose, t }: {
+  hotel: Hotel; isHe: boolean;
+  onSave: (h: Hotel) => void; onClose: () => void;
+  t: (k: string) => string;
+}) {
+  const [form, setForm] = useState({ ...hotel });
+  function set(field: keyof Hotel, value: string | number) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">{isHe ? (hotel.name ? 'ערוך מלון' : 'הוסף מלון') : (hotel.name ? 'Edit Hotel' : 'Add Hotel')}</div>
+        {([
+          ['name', isHe ? 'שם' : 'Name'],
+          ['city', isHe ? 'עיר' : 'City'],
+          ['address', isHe ? 'כתובת' : 'Address'],
+          ['checkIn', isHe ? 'צ\'ק-אין (ISO)' : 'Check-in (ISO)'],
+          ['checkOut', isHe ? 'צ\'ק-אאוט (ISO)' : 'Check-out (ISO)'],
+          ['confirmationCode', isHe ? 'קוד אישור' : 'Confirmation Code'],
+          ['wifiPassword', isHe ? 'סיסמת WiFi' : 'WiFi Password'],
+          ['phone', isHe ? 'טלפון' : 'Phone'],
+          ['notes', isHe ? 'הערות' : 'Notes'],
+        ] as [keyof Hotel, string][]).map(([field, label]) => (
+          <div className="form-group" key={field}>
+            <label className="form-label">{label}</label>
+            <input className="form-input" value={(form as any)[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
+          </div>
+        ))}
+        <div className="modal-actions">
+          <button className="admin-btn secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="admin-btn primary" onClick={() => onSave(form)}>{t('common.save')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default HotelsPage;

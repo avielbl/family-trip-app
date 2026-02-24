@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
 import { TripProvider, useTripContext } from './context/TripContext';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
@@ -13,6 +14,9 @@ import QuizPage from './pages/QuizPage';
 import PackingPage from './pages/PackingPage';
 import SettingsPage from './pages/SettingsPage';
 import SetupPage from './pages/SetupPage';
+import JoinPage from './pages/JoinPage';
+import AdminPage from './pages/AdminPage';
+import TravelLogPage from './pages/TravelLogPage';
 import './i18n';
 
 function AppRoutes() {
@@ -36,6 +40,7 @@ function AppRoutes() {
     return (
       <Routes>
         <Route path="/setup" element={<SetupPage />} />
+        <Route path="/join/:tripCode" element={<JoinPage />} />
         <Route path="*" element={<Navigate to="/setup" replace />} />
       </Routes>
     );
@@ -55,8 +60,11 @@ function AppRoutes() {
         <Route path="/quiz" element={<QuizPage />} />
         <Route path="/packing" element={<PackingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/travel-log" element={<TravelLogPage />} />
+        <Route path="/admin" element={<AdminPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
+      <Route path="/join/:tripCode" element={<JoinPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -65,9 +73,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <TripProvider>
-        <AppRoutes />
-      </TripProvider>
+      <AuthProvider>
+        <TripProvider>
+          <AppRoutes />
+        </TripProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

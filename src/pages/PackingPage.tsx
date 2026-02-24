@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckSquare, Square, Plus, Package } from 'lucide-react';
+import { CheckSquare, Square, Plus, Package, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
-import { savePackingItem, togglePackingItem } from '../firebase/tripService';
+import { savePackingItem, togglePackingItem, deletePackingItem } from '../firebase/tripService';
 
 const PackingPage: React.FC = () => {
   const { t } = useTranslation();
-  const { packingItems, tripCode, config } = useTripContext();
+  const { packingItems, tripCode, config, isAdmin } = useTripContext();
   const [activeTab, setActiveTab] = useState<string>('shared');
   const [newItemText, setNewItemText] = useState('');
 
@@ -40,15 +40,18 @@ const PackingPage: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleAddItem();
-    }
+    if (e.key === 'Enter') { handleAddItem(); }
+  };
+
+  const handleDeleteItem = (itemId: string) => {
+    if (!tripCode) return;
+    deletePackingItem(tripCode, itemId);
   };
 
   return (
     <div className="packing-page">
-      <h1>
-        <Package size={24} />
+      <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Package size={22} />
         {t('packing.title')}
       </h1>
 
@@ -83,20 +86,20 @@ const PackingPage: React.FC = () => {
               onClick={() => handleToggle(item.id, item.checked)}
             >
               <span className="packing-checkbox">
-                {item.checked ? (
-                  <CheckSquare size={20} />
-                ) : (
-                  <Square size={20} />
-                )}
+                {item.checked ? <CheckSquare size={20} /> : <Square size={20} />}
               </span>
-              <span
-                style={{
-                  textDecoration: item.checked ? 'line-through' : 'none',
-                  opacity: item.checked ? 0.5 : 1,
-                }}
-              >
+              <span className="packing-text" style={{ flex: 1 }}>
                 {item.text}
               </span>
+              {isAdmin && (
+                <button
+                  className="admin-icon-btn delete"
+                  style={{ padding: '4px 6px' }}
+                  onClick={(e) => { e.stopPropagation(); handleDeleteItem(item.id); }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </li>
           ))}
         </ul>

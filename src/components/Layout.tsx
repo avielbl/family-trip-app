@@ -14,10 +14,15 @@ import {
   Settings,
   Menu,
   X,
+  Moon,
+  Sun,
+  BookOpen,
+  Shield,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useTripContext } from '../context/TripContext';
 
-const navItems = [
+const baseNavItems = [
   { path: '/', icon: Home, labelKey: 'nav.home' },
   { path: '/flights', icon: Plane, labelKey: 'nav.flights' },
   { path: '/hotels', icon: Hotel, labelKey: 'nav.hotels' },
@@ -28,6 +33,7 @@ const navItems = [
   { path: '/photos', icon: Camera, labelKey: 'nav.photos' },
   { path: '/quiz', icon: HelpCircle, labelKey: 'nav.quiz' },
   { path: '/packing', icon: CheckSquare, labelKey: 'nav.packing' },
+  { path: '/travel-log', icon: BookOpen, labelKey: 'nav.travelLog' },
   { path: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
 
@@ -37,6 +43,25 @@ export default function Layout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const isRTL = i18n.language === 'he';
+  const { isAdmin } = useTripContext();
+
+  const navItems = [
+    ...baseNavItems,
+    ...(isAdmin ? [{ path: '/admin', icon: Shield, labelKey: 'nav.admin' }] : []),
+  ];
+  const [darkMode, setDarkMode] = useState(() => {
+    return localStorage.getItem('theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [darkMode]);
 
   return (
     <div
@@ -50,6 +75,13 @@ export default function Layout() {
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
         <h1 className="top-title">{t('app.title')}</h1>
+        <button
+          className="menu-btn"
+          onClick={() => setDarkMode(!darkMode)}
+          aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
         <button
           className="lang-btn"
           onClick={() => {

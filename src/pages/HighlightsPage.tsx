@@ -1,58 +1,53 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Clock, Ticket, CheckCircle, Circle, ExternalLink } from 'lucide-react';
+import { MapPin, Clock, Ticket, CheckCircle, Circle, ExternalLink, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
-import { toggleHighlightComplete } from '../firebase/tripService';
+import { toggleHighlightComplete, saveHighlight, deleteHighlight } from '../firebase/tripService';
 import type { Highlight, HighlightCategory } from '../types/trip';
 
 const CATEGORY_EMOJIS: Record<HighlightCategory, string> = {
-  beach: '\u{1F3D6}\u{FE0F}',
-  ruins: '\u{1F3DB}\u{FE0F}',
-  museum: '\u{1F3FA}',
-  food: '\u{1F37D}\u{FE0F}',
-  'kids-fun': '\u{1F3A1}',
-  nature: '\u{1F33F}',
-  shopping: '\u{1F6CD}\u{FE0F}',
-  viewpoint: '\u{1F305}',
-  other: '\u{1F4CC}',
+  beach: '🏖️',
+  ruins: '🏛️',
+  museum: '🏺',
+  food: '🍽️',
+  'kids-fun': '🎡',
+  nature: '🌿',
+  shopping: '🛍️',
+  viewpoint: '🌅',
+  other: '📌',
 };
 
 const ALL_CATEGORIES: HighlightCategory[] = [
-  'beach',
-  'ruins',
-  'museum',
-  'food',
-  'kids-fun',
-  'nature',
-  'shopping',
-  'viewpoint',
-  'other',
+  'beach', 'ruins', 'museum', 'food', 'kids-fun', 'nature', 'shopping', 'viewpoint', 'other',
 ];
+
+function emptyHighlight(dayIndex = 0): Highlight {
+  return {
+    id: `hl-${Date.now()}`,
+    dayIndex,
+    name: '',
+    category: 'other',
+    completed: false,
+    completedBy: [],
+  };
+}
 
 const HighlightsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { highlights, tripCode, currentMember, days, config } = useTripContext();
+  const { highlights, tripCode, currentMember, days, config, isAdmin } = useTripContext();
   const [selectedCategory, setSelectedCategory] = useState<HighlightCategory | 'all'>('all');
+  const [editItem, setEditItem] = useState<Highlight | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
   const isHebrew = i18n.language === 'he';
 
-  const getHighlightName = (highlight: Highlight) => {
-    if (isHebrew && highlight.nameHe) return highlight.nameHe;
-    return highlight.name;
-  };
+  const getHighlightName = (h: Highlight) => (isHebrew && h.nameHe ? h.nameHe : h.name);
+  const getHighlightDescription = (h: Highlight) => (isHebrew && h.descriptionHe ? h.descriptionHe : h.description);
 
-  const getHighlightDescription = (highlight: Highlight) => {
-    if (isHebrew && highlight.descriptionHe) return highlight.descriptionHe;
-    return highlight.description;
-  };
-
-  const getMapUrl = (highlight: Highlight) => {
-    if (highlight.mapUrl) return highlight.mapUrl;
-    if (highlight.address) {
-      const query = encodeURIComponent(highlight.address);
-      return `https://www.google.com/maps/search/?api=1&query=${query}`;
-    }
+  const getMapUrl = (h: Highlight) => {
+    if (h.mapUrl) return h.mapUrl;
+    if (h.address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(h.address)}`;
     return null;
   };
 
@@ -64,10 +59,10 @@ const HighlightsPage: React.FC = () => {
   const highlightsByDay = useMemo(() => {
     const grouped = new Map<number, Highlight[]>();
     const sorted = [...filteredHighlights].sort((a, b) => a.dayIndex - b.dayIndex);
-    for (const highlight of sorted) {
-      const existing = grouped.get(highlight.dayIndex) || [];
-      existing.push(highlight);
-      grouped.set(highlight.dayIndex, existing);
+    for (const h of sorted) {
+      const existing = grouped.get(h.dayIndex) || [];
+      existing.push(h);
+      grouped.set(h.dayIndex, existing);
     }
     return grouped;
   }, [filteredHighlights]);
@@ -75,24 +70,17 @@ const HighlightsPage: React.FC = () => {
   const getDayLabel = (dayIndex: number) => {
     const day = days.find((d) => d.dayIndex === dayIndex);
     if (day) {
-      try {
-        const dateStr = format(parseISO(day.date), 'MMM d');
-        return `${t('common.day')} ${dayIndex + 1} - ${dateStr}`;
-      } catch {
-        return `${t('common.day')} ${dayIndex + 1}`;
-      }
+      try { return `${t('common.day')} ${dayIndex + 1} - ${format(parseISO(day.date), 'MMM d')}`; }
+      catch { return `${t('common.day')} ${dayIndex + 1}`; }
     }
     return `${t('common.day')} ${dayIndex + 1}`;
   };
 
-  const handleToggleComplete = useCallback(
-    async (highlight: Highlight) => {
-      if (!tripCode || !currentMember) return;
-      const isCompletedByMe = highlight.completedBy?.includes(currentMember.id) ?? false;
-      await toggleHighlightComplete(tripCode, highlight.id, currentMember.id, !isCompletedByMe);
-    },
-    [tripCode, currentMember]
-  );
+  const handleToggleComplete = useCallback(async (h: Highlight) => {
+    if (!tripCode || !currentMember) return;
+    const isCompletedByMe = h.completedBy?.includes(currentMember.id) ?? false;
+    await toggleHighlightComplete(tripCode, h.id, currentMember.id, !isCompletedByMe);
+  }, [tripCode, currentMember]);
 
   const getMemberName = (memberId: string) => {
     const member = config?.familyMembers.find((m) => m.id === memberId);
@@ -100,9 +88,33 @@ const HighlightsPage: React.FC = () => {
     return isHebrew ? member.nameHe : member.name;
   };
 
+  async function handleSave(h: Highlight) {
+    if (!tripCode) return;
+    await saveHighlight(tripCode, h);
+    setShowModal(false);
+    setEditItem(null);
+  }
+
+  async function handleDelete(id: string) {
+    if (!tripCode) return;
+    if (!confirm(isHebrew ? 'למחוק אטרקציה זו?' : 'Delete this highlight?')) return;
+    await deleteHighlight(tripCode, id);
+  }
+
   return (
     <div className="highlights-page">
-      <h1>{t('highlights.title')}</h1>
+      <h1 className="page-title">{t('highlights.title')}</h1>
+
+      {isAdmin && (
+        <div className="admin-add-bar">
+          <button
+            className="admin-icon-btn add"
+            onClick={() => { setEditItem(emptyHighlight()); setShowModal(true); }}
+          >
+            <Plus size={14} /> {isHebrew ? 'הוסף אטרקציה' : 'Add Highlight'}
+          </button>
+        </div>
+      )}
 
       <div className="category-filter">
         <button
@@ -117,111 +129,177 @@ const HighlightsPage: React.FC = () => {
             className={`category-tab ${selectedCategory === cat ? 'active' : ''}`}
             onClick={() => setSelectedCategory(cat)}
           >
-            <span className="category-emoji">{CATEGORY_EMOJIS[cat]}</span>
-            <span>{t(`highlights.categories.${cat}`)}</span>
+            {CATEGORY_EMOJIS[cat]} {t(`highlights.categories.${cat}`)}
           </button>
         ))}
       </div>
 
       {Array.from(highlightsByDay.entries()).map(([dayIndex, dayHighlights]) => (
         <div key={dayIndex} className="highlights-day-group">
-          <h3>{getDayLabel(dayIndex)}</h3>
+          <h3 className="day-header">{getDayLabel(dayIndex)}</h3>
 
-          {dayHighlights.map((highlight) => {
-            const isCompletedByMe =
-              currentMember && highlight.completedBy?.includes(currentMember.id);
-            const mapUrl = getMapUrl(highlight);
-            const description = getHighlightDescription(highlight);
+          {dayHighlights.map((h) => {
+            const isCompletedByMe = currentMember && h.completedBy?.includes(currentMember.id);
+            const mapUrl = getMapUrl(h);
 
             return (
               <div
-                key={highlight.id}
-                className={`highlight-card ${highlight.completed ? 'highlight-completed' : ''}`}
+                key={h.id}
+                className={`highlight-card ${h.completed ? 'highlight-completed' : ''}`}
               >
-                {highlight.imageUrl && (
-                  <div className="highlight-image">
-                    <img src={highlight.imageUrl} alt={getHighlightName(highlight)} loading="lazy" />
-                  </div>
+                {h.imageUrl && (
+                  <img src={h.imageUrl} alt={getHighlightName(h)} loading="lazy" style={{ width: '100%', borderRadius: '8px', marginBottom: '8px' }} />
                 )}
-
-                <div className="highlight-card-content">
-                  <div className="highlight-header">
-                    <span className="category-emoji">{CATEGORY_EMOJIS[highlight.category]}</span>
-                    <h4 className="highlight-name">{getHighlightName(highlight)}</h4>
-                  </div>
-
-                  {description && (
-                    <p className="highlight-description">{description}</p>
-                  )}
-
-                  <div className="highlight-info">
-                    {highlight.openingHours && (
-                      <div className="highlight-info-item">
-                        <Clock size={14} />
-                        <span className="info-label">{t('highlights.openingHours')}:</span>
-                        <span>{highlight.openingHours}</span>
-                      </div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span className="highlight-emoji">{CATEGORY_EMOJIS[h.category]}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '15px' }}>{getHighlightName(h)}</div>
+                    {getHighlightDescription(h) && (
+                      <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>{getHighlightDescription(h)}</p>
                     )}
-
-                    {highlight.ticketInfo && (
-                      <div className="highlight-info-item">
-                        <Ticket size={14} />
-                        <span className="info-label">{t('highlights.tickets')}:</span>
-                        <span>{highlight.ticketInfo}</span>
-                      </div>
+                    {h.openingHours && (
+                      <div className="card-detail"><Clock size={13} /> {t('highlights.openingHours')}: {h.openingHours}</div>
                     )}
-
-                    {highlight.address && (
-                      <div className="highlight-info-item">
-                        <MapPin size={14} />
-                        <span>{highlight.address}</span>
+                    {h.ticketInfo && (
+                      <div className="card-detail"><Ticket size={13} /> {t('highlights.tickets')}: {h.ticketInfo}</div>
+                    )}
+                    {h.address && (
+                      <div className="card-detail">
+                        <MapPin size={13} /> {h.address}
                         {mapUrl && (
-                          <a
-                            href={mapUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="map-link"
-                          >
+                          <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{ marginInlineStart: '4px', color: 'var(--brand-primary)' }}>
                             <ExternalLink size={12} />
                           </a>
                         )}
                       </div>
                     )}
-                  </div>
-
-                  {highlight.completedBy && highlight.completedBy.length > 0 && (
-                    <div className="highlight-visited-by">
-                      <CheckCircle size={14} />
-                      <span>
-                        {t('highlights.visited')}: {highlight.completedBy.map(getMemberName).join(', ')}
-                      </span>
-                    </div>
-                  )}
-
-                  <button
-                    className={`visit-btn ${isCompletedByMe ? 'visited' : ''}`}
-                    onClick={() => handleToggleComplete(highlight)}
-                  >
-                    {isCompletedByMe ? (
-                      <>
-                        <CheckCircle size={16} />
-                        <span>{t('highlights.markUndone')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Circle size={16} />
-                        <span>{t('highlights.markDone')}</span>
-                      </>
+                    {h.completedBy && h.completedBy.length > 0 && (
+                      <div className="card-detail" style={{ color: 'var(--green-600)' }}>
+                        <CheckCircle size={13} /> {t('highlights.visited')}: {h.completedBy.map(getMemberName).join(', ')}
+                      </div>
                     )}
-                  </button>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                      <button
+                        className={`visit-btn ${isCompletedByMe ? 'done' : 'not-done'}`}
+                        onClick={() => handleToggleComplete(h)}
+                      >
+                        {isCompletedByMe ? (
+                          <><CheckCircle size={14} /> {t('highlights.markUndone')}</>
+                        ) : (
+                          <><Circle size={14} /> {t('highlights.markDone')}</>
+                        )}
+                      </button>
+                      {isAdmin && (
+                        <>
+                          <button className="admin-icon-btn edit" onClick={() => { setEditItem(h); setShowModal(true); }}>
+                            <Pencil size={13} /> {t('common.edit')}
+                          </button>
+                          <button className="admin-icon-btn delete" onClick={() => handleDelete(h.id)}>
+                            <Trash2 size={13} /> {t('common.delete')}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       ))}
+
+      {/* Edit/Add Modal */}
+      {showModal && editItem && (
+        <HighlightModal
+          highlight={editItem}
+          days={days}
+          isHe={isHebrew}
+          onSave={handleSave}
+          onClose={() => { setShowModal(false); setEditItem(null); }}
+          t={t}
+        />
+      )}
     </div>
   );
 };
+
+function HighlightModal({
+  highlight,
+  days,
+  isHe,
+  onSave,
+  onClose,
+  t,
+}: {
+  highlight: Highlight;
+  days: { dayIndex: number; date: string; title: string }[];
+  isHe: boolean;
+  onSave: (h: Highlight) => void;
+  onClose: () => void;
+  t: (key: string) => string;
+}) {
+  const [form, setForm] = useState({ ...highlight });
+
+  function set(field: keyof Highlight, value: string | number) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          {isHe ? (highlight.name ? 'ערוך אטרקציה' : 'הוסף אטרקציה') : (highlight.name ? 'Edit Highlight' : 'Add Highlight')}
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'שם' : 'Name'}</label>
+          <input className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'שם בעברית' : 'Name (Hebrew)'}</label>
+          <input className="form-input" dir="rtl" value={form.nameHe ?? ''} onChange={(e) => set('nameHe', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'תיאור' : 'Description'}</label>
+          <textarea className="form-input" value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} rows={2} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'קטגוריה' : 'Category'}</label>
+          <select className="form-input" value={form.category} onChange={(e) => set('category', e.target.value as HighlightCategory)}>
+            {(['beach','ruins','museum','food','kids-fun','nature','shopping','viewpoint','other'] as HighlightCategory[]).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'יום' : 'Day'}</label>
+          <select className="form-input" value={form.dayIndex} onChange={(e) => set('dayIndex', Number(e.target.value))}>
+            {days.map((d) => (
+              <option key={d.dayIndex} value={d.dayIndex}>{t('common.day')} {d.dayIndex + 1} — {d.title}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'כתובת' : 'Address'}</label>
+          <input className="form-input" value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'שעות פתיחה' : 'Opening Hours'}</label>
+          <input className="form-input" value={form.openingHours ?? ''} onChange={(e) => set('openingHours', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'מידע על כרטיסים' : 'Ticket Info'}</label>
+          <input className="form-input" value={form.ticketInfo ?? ''} onChange={(e) => set('ticketInfo', e.target.value)} />
+        </div>
+
+        <div className="modal-actions">
+          <button className="admin-btn secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="admin-btn primary" onClick={() => onSave(form)}>{t('common.save')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default HighlightsPage;
