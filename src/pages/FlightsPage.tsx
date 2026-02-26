@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plane, Clock, MapPin, Terminal, Hash, FileText, ExternalLink, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plane, Clock, MapPin, Terminal, Hash, FileText, ExternalLink, Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { saveFlight, deleteFlight } from '../firebase/tripService';
 import type { Flight } from '../types/trip';
+import AIImportModal from '../components/AIImportModal';
 
 function emptyFlight(): Flight {
   return {
@@ -25,6 +26,7 @@ const FlightsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { flights, tripCode, isAdmin } = useTripContext();
   const [editItem, setEditItem] = useState<Flight | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const isHe = i18n.language === 'he';
 
   const sortedFlights = useMemo(() => {
@@ -61,6 +63,30 @@ const FlightsPage: React.FC = () => {
     await deleteFlight(tripCode, id);
   }
 
+  async function handleImportFlights(items: Record<string, unknown>[]) {
+    if (!tripCode) return;
+    for (const item of items) {
+      const flight: Flight = {
+        id: `flight-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dayIndex: Number(item.dayIndex ?? 0),
+        airline: String(item.airline ?? ''),
+        flightNumber: String(item.flightNumber ?? ''),
+        departureAirport: String(item.departureAirport ?? ''),
+        departureAirportCode: String(item.departureAirportCode ?? ''),
+        arrivalAirport: String(item.arrivalAirport ?? ''),
+        arrivalAirportCode: String(item.arrivalAirportCode ?? ''),
+        departureTime: String(item.departureTime ?? ''),
+        arrivalTime: String(item.arrivalTime ?? ''),
+        terminal: item.terminal ? String(item.terminal) : undefined,
+        gate: item.gate ? String(item.gate) : undefined,
+        confirmationCode: item.confirmationCode ? String(item.confirmationCode) : undefined,
+        notes: item.notes ? String(item.notes) : undefined,
+      };
+      await saveFlight(tripCode, flight);
+    }
+    setShowImport(false);
+  }
+
   return (
     <div className="flights-page">
       <h1 className="page-title">{t('flights.title')}</h1>
@@ -69,6 +95,9 @@ const FlightsPage: React.FC = () => {
         <div className="admin-add-bar">
           <button className="admin-icon-btn add" onClick={() => setEditItem(emptyFlight())}>
             <Plus size={14} /> {isHe ? 'הוסף טיסה' : 'Add Flight'}
+          </button>
+          <button className="admin-icon-btn ai-import-btn" onClick={() => setShowImport(true)}>
+            <Sparkles size={14} /> {isHe ? 'ייבוא AI' : 'AI Import'}
           </button>
         </div>
       )}
@@ -183,6 +212,14 @@ const FlightsPage: React.FC = () => {
           onSave={handleSave}
           onClose={() => setEditItem(null)}
           t={t}
+        />
+      )}
+
+      {showImport && (
+        <AIImportModal
+          target="flight"
+          onAccept={handleImportFlights}
+          onClose={() => setShowImport(false)}
         />
       )}
     </div>

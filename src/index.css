@@ -1834,3 +1834,179 @@ body {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Phase 6 — AI Content Engine
+   ───────────────────────────────────────────────────────────── */
+
+/* AI Config section in AdminPage */
+.ai-config-section { margin-bottom: 24px; }
+.ai-config-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.ai-config-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.ai-config-select, .ai-config-input {
+  padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 8px;
+  background: var(--input-bg); color: var(--text-primary); font-size: 14px; width: 100%;
+}
+.ai-config-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ai-config-preset-btn {
+  padding: 3px 8px; border: 1px solid var(--border-color); border-radius: 20px;
+  background: var(--bg-tertiary); color: var(--text-secondary); font-size: 12px; cursor: pointer;
+  transition: all 0.15s;
+}
+.ai-config-preset-btn:hover { background: var(--brand-primary); color: #fff; border-color: var(--brand-primary); }
+.ai-key-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.ai-key-hint a { color: var(--brand-primary); }
+.ai-test-result { font-size: 13px; padding: 6px 10px; border-radius: 6px; margin-top: 8px; }
+.ai-test-result.ok  { background: #d1fae5; color: #065f46; }
+.ai-test-result.err { background: #fee2e2; color: #991b1b; }
+[data-theme="dark"] .ai-test-result.ok  { background: #064e3b; color: #6ee7b7; }
+[data-theme="dark"] .ai-test-result.err { background: #7f1d1d; color: #fca5a5; }
+
+/* AI action buttons (shown in page headers) */
+.ai-import-btn, .ai-suggest-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+}
+.ai-import-btn:hover { background: #eff6ff; border-color: var(--brand-primary); color: var(--brand-primary); }
+.ai-suggest-btn:hover { background: #fdf4ff; border-color: #9333ea; color: #9333ea; }
+[data-theme="dark"] .ai-import-btn:hover { background: #1e3a5f; }
+[data-theme="dark"] .ai-suggest-btn:hover { background: #3b1a5c; }
+
+/* AI Import Modal */
+.ai-modal { max-width: 540px; max-height: 85vh; overflow-y: auto; }
+.ai-modal-header { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
+.ai-provider-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px; background: var(--bg-tertiary);
+  font-size: 11px; color: var(--text-muted); margin-bottom: 12px;
+}
+
+/* Upload zone */
+.ai-upload-zone {
+  border: 2px dashed var(--border-color); border-radius: 12px;
+  padding: 24px 16px; text-align: center; cursor: pointer;
+  transition: all 0.2s; color: var(--text-muted); margin-bottom: 12px;
+}
+.ai-upload-zone:hover, .ai-upload-zone.drag-over {
+  border-color: var(--brand-primary); background: var(--brand-light); color: var(--brand-primary);
+}
+.ai-upload-zone .upload-files-list { margin-top: 8px; text-align: left; }
+.ai-upload-file-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; margin: 2px; border-radius: 20px;
+  background: var(--bg-tertiary); font-size: 12px; color: var(--text-secondary);
+}
+
+/* Paste textarea */
+.ai-paste-area {
+  width: 100%; min-height: 80px; padding: 8px 10px;
+  border: 1px solid var(--input-border); border-radius: 8px;
+  background: var(--input-bg); color: var(--text-primary);
+  font-size: 13px; resize: vertical; margin-bottom: 12px;
+}
+
+/* Review list */
+.ai-review-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.ai-result-card {
+  border: 1px solid var(--border-color); border-radius: 10px;
+  padding: 12px; background: var(--bg-card); transition: all 0.15s;
+}
+.ai-result-card.accepted { border-color: #10b981; background: #f0fdf4; }
+.ai-result-card.rejected { opacity: 0.45; }
+[data-theme="dark"] .ai-result-card.accepted { background: #022c22; border-color: #059669; }
+.ai-result-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ai-result-card-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.ai-result-toggle {
+  display: flex; gap: 4px;
+}
+.ai-accept-btn, .ai-reject-btn {
+  padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent; transition: all 0.15s;
+}
+.ai-accept-btn { background: #d1fae5; color: #065f46; border-color: #10b981; }
+.ai-accept-btn:hover, .ai-accept-btn.active { background: #10b981; color: #fff; }
+.ai-reject-btn { background: var(--bg-tertiary); color: var(--text-muted); }
+.ai-reject-btn:hover, .ai-reject-btn.active { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+[data-theme="dark"] .ai-accept-btn { background: #064e3b; color: #6ee7b7; }
+[data-theme="dark"] .ai-accept-btn.active { background: #059669; color: #fff; }
+
+/* Result field grid */
+.ai-result-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ai-result-field { display: flex; flex-direction: column; gap: 2px; }
+.ai-result-field label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.ai-result-field input, .ai-result-field select {
+  padding: 4px 7px; border: 1px solid var(--input-border); border-radius: 6px;
+  background: var(--input-bg); color: var(--text-primary); font-size: 12px;
+}
+
+/* AI modal action row */
+.ai-modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+.ai-save-btn {
+  padding: 8px 16px; border-radius: 8px; background: var(--brand-primary); color: #fff;
+  font-size: 14px; font-weight: 600; border: none; cursor: pointer;
+}
+.ai-save-btn:disabled { opacity: 0.5; cursor: default; }
+.ai-save-btn:not(:disabled):hover { background: var(--brand-primary-dark); }
+
+/* AI Suggest Panel */
+.ai-suggest-panel {
+  border: 1px solid var(--border-color); border-radius: 12px;
+  margin-bottom: 16px; overflow: hidden;
+  background: var(--bg-card);
+}
+.ai-suggest-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer;
+  background: linear-gradient(135deg, #fdf4ff 0%, #eff6ff 100%);
+}
+[data-theme="dark"] .ai-suggest-panel-header { background: linear-gradient(135deg, #1e1040 0%, #1e3a5f 100%); }
+.ai-suggest-panel-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.ai-suggest-panel-body { padding: 12px 14px; }
+.ai-suggest-group { margin-bottom: 16px; }
+.ai-suggest-group-header { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+.ai-suggestion-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px;
+  background: var(--bg-card); margin-bottom: 8px; transition: all 0.15s;
+}
+.ai-suggestion-card.accepted { border-color: #10b981; background: #f0fdf4; }
+[data-theme="dark"] .ai-suggestion-card.accepted { background: #022c22; }
+.ai-suggestion-icon { font-size: 22px; flex-shrink: 0; }
+.ai-suggestion-body { flex: 1; min-width: 0; }
+.ai-suggestion-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.ai-suggestion-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.ai-suggestion-rationale { font-size: 11px; color: var(--text-subtle); font-style: italic; margin-top: 3px; }
+.ai-suggestion-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* Passport stamps (redesigned) */
+.passport-page { padding: 16px; }
+.passport-stamps-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px;
+}
+.passport-stamp-card {
+  border: 2px solid var(--border-color); border-radius: 14px; padding: 16px 12px;
+  text-align: center; background: var(--bg-card); transition: all 0.2s; cursor: default;
+  position: relative; overflow: hidden;
+}
+.passport-stamp-card.earned {
+  border-color: #f59e0b; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+[data-theme="dark"] .passport-stamp-card.earned { background: linear-gradient(135deg, #451a03 0%, #78350f 100%); border-color: #d97706; }
+.passport-stamp-card.unearned { opacity: 0.65; }
+.passport-stamp-icon { font-size: 36px; margin-bottom: 8px; }
+.passport-stamp-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; line-height: 1.3; }
+.passport-stamp-location { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+.passport-stamp-earned-badge {
+  position: absolute; top: 8px; right: 8px;
+  background: #f59e0b; color: #fff; border-radius: 20px;
+  padding: 2px 7px; font-size: 10px; font-weight: 700;
+}
+.passport-stamp-earn-btn {
+  padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: var(--brand-primary); color: #fff; border: none; cursor: pointer;
+}
+.passport-stamp-earn-btn:hover { background: var(--brand-primary-dark); }
+.passport-stamp-earn-hint { font-size: 11px; color: var(--text-subtle); font-style: italic; }
+.passport-generate-row { display: flex; justify-content: flex-end; margin-bottom: 12px; }

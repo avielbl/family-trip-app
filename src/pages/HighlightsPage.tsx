@@ -1,10 +1,12 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Clock, Ticket, CheckCircle, Circle, ExternalLink, Plus, Pencil, Trash2 } from 'lucide-react';
+import { MapPin, Clock, Ticket, CheckCircle, Circle, ExternalLink, Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { toggleHighlightComplete, saveHighlight, deleteHighlight } from '../firebase/tripService';
 import type { Highlight, HighlightCategory } from '../types/trip';
+import AIImportModal from '../components/AIImportModal';
+import AISuggestPanel from '../components/AISuggestPanel';
 
 const CATEGORY_EMOJIS: Record<HighlightCategory, string> = {
   beach: '🏖️',
@@ -35,10 +37,11 @@ function emptyHighlight(dayIndex = 0): Highlight {
 
 const HighlightsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { highlights, tripCode, currentMember, days, config, isAdmin } = useTripContext();
+  const { highlights, hotels, driving, tripCode, currentMember, days, config, isAdmin } = useTripContext();
   const [selectedCategory, setSelectedCategory] = useState<HighlightCategory | 'all'>('all');
   const [editItem, setEditItem] = useState<Highlight | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const isHebrew = i18n.language === 'he';
 
@@ -101,6 +104,50 @@ const HighlightsPage: React.FC = () => {
     await deleteHighlight(tripCode, id);
   }
 
+  async function handleImportHighlights(items: Record<string, unknown>[]) {
+    if (!tripCode) return;
+    for (const item of items) {
+      const highlight: Highlight = {
+        id: `hl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dayIndex: Number(item.dayIndex ?? 0),
+        name: String(item.name ?? ''),
+        nameHe: item.nameHe ? String(item.nameHe) : undefined,
+        description: item.description ? String(item.description) : undefined,
+        descriptionHe: item.descriptionHe ? String(item.descriptionHe) : undefined,
+        category: (['beach','ruins','museum','food','kids-fun','nature','shopping','viewpoint','other'].includes(String(item.category ?? ''))
+          ? item.category as HighlightCategory
+          : 'other'),
+        address: item.address ? String(item.address) : undefined,
+        openingHours: item.openingHours ? String(item.openingHours) : undefined,
+        ticketInfo: item.ticketInfo ? String(item.ticketInfo) : undefined,
+        completed: false,
+        completedBy: [],
+      };
+      await saveHighlight(tripCode, highlight);
+    }
+    setShowImport(false);
+  }
+
+  async function handleAcceptSuggestions(items: Record<string, unknown>[]) {
+    if (!tripCode) return;
+    for (const item of items) {
+      const highlight: Highlight = {
+        id: `hl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dayIndex: Number(item.dayIndex ?? 0),
+        name: String(item.name ?? ''),
+        nameHe: item.nameHe ? String(item.nameHe) : undefined,
+        description: item.description ? String(item.description) : undefined,
+        category: (['beach','ruins','museum','food','kids-fun','nature','shopping','viewpoint','other'].includes(String(item.category ?? ''))
+          ? item.category as HighlightCategory
+          : 'other'),
+        address: item.address ? String(item.address) : undefined,
+        completed: false,
+        completedBy: [],
+      };
+      await saveHighlight(tripCode, highlight);
+    }
+  }
+
   return (
     <div className="highlights-page">
       <h1 className="page-title">{t('highlights.title')}</h1>
@@ -113,7 +160,18 @@ const HighlightsPage: React.FC = () => {
           >
             <Plus size={14} /> {isHebrew ? 'הוסף אטרקציה' : 'Add Highlight'}
           </button>
+          <button className="admin-icon-btn ai-import-btn" onClick={() => setShowImport(true)}>
+            <Sparkles size={14} /> {isHebrew ? 'ייבוא AI' : 'AI Import'}
+          </button>
         </div>
+      )}
+
+      {isAdmin && (
+        <AISuggestPanel
+          type="highlight"
+          context={{ hotels, driving, days, existing: highlights }}
+          onAccept={handleAcceptSuggestions}
+        />
       )}
 
       <div className="category-filter">
@@ -218,6 +276,14 @@ const HighlightsPage: React.FC = () => {
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditItem(null); }}
           t={t}
+        />
+      )}
+
+      {showImport && (
+        <AIImportModal
+          target="highlight"
+          onAccept={handleImportHighlights}
+          onClose={() => setShowImport(false)}
         />
       )}
     </div>

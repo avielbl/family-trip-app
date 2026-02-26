@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { claimAdminUid } from '../firebase/authService';
 import { saveTripConfig } from '../firebase/tripService';
+import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import type { FamilyMember } from '../types/trip';
+import type { AIConfig } from '../types/ai';
 
 export default function AdminPage() {
   const { t, i18n } = useTranslation();
@@ -14,6 +16,11 @@ export default function AdminPage() {
   const { config, tripCode, isAdmin } = useTripContext();
   const { firebaseUser } = useAuthContext();
   const isHe = i18n.language === 'he';
+
+  const [aiConfig, setAiConfigState] = useState<AIConfig>(getAIConfig);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState('');
+  const [aiSaved, setAiSaved] = useState(false);
 
   const [members, setMembers] = useState<FamilyMember[]>(
     config?.familyMembers ?? []
@@ -50,6 +57,25 @@ export default function AdminPage() {
     await navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleSaveAI() {
+    setAIConfig(aiConfig);
+    setAiSaved(true);
+    setTimeout(() => setAiSaved(false), 2000);
+  }
+
+  async function handleTestAI() {
+    setAiTesting(true);
+    setAiTestResult('');
+    try {
+      await callAI('Reply with exactly the word: ok');
+      setAiTestResult(isHe ? t('ai.testOk') : t('ai.testOk'));
+    } catch (e: any) {
+      setAiTestResult(`${t('ai.testFail')}: ${e.message}`);
+    } finally {
+      setAiTesting(false);
+    }
   }
 
   async function handleClaimAdmin() {
@@ -100,6 +126,88 @@ export default function AdminPage() {
         <Shield size={22} style={{ display: 'inline', marginInlineEnd: '8px' }} />
         {isHe ? 'ניהול טיול' : 'Trip Admin'}
       </h1>
+
+      {/* AI Configuration */}
+      <div className="admin-section ai-config-section">
+        <div className="admin-section-title">
+          <Cpu size={16} />
+          {isHe ? 'הגדרות AI' : 'AI Configuration'}
+        </div>
+
+        <div className="ai-config-row">
+          <label className="ai-config-label">{t('ai.provider')}</label>
+          <select
+            className="ai-config-select"
+            value={aiConfig.provider}
+            onChange={(e) => {
+              const p = e.target.value as AIConfig['provider'];
+              setAiConfigState({ ...aiConfig, provider: p, model: PROVIDER_PRESETS[p][0] });
+            }}
+          >
+            <option value="gemini">Google Gemini</option>
+            <option value="groq">Groq (Llama)</option>
+            <option value="claude">Anthropic Claude</option>
+          </select>
+        </div>
+
+        <div className="ai-config-row">
+          <label className="ai-config-label">{t('ai.model')}</label>
+          <input
+            className="ai-config-input"
+            value={aiConfig.model}
+            onChange={(e) => setAiConfigState({ ...aiConfig, model: e.target.value })}
+          />
+          <div className="ai-config-presets">
+            {PROVIDER_PRESETS[aiConfig.provider].map((preset) => (
+              <button
+                key={preset}
+                className="ai-config-preset-btn"
+                onClick={() => setAiConfigState({ ...aiConfig, model: preset })}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="ai-config-row">
+          <label className="ai-config-label">{t('ai.apiKey')}</label>
+          <input
+            className="ai-config-input"
+            type="password"
+            value={aiConfig.apiKey}
+            onChange={(e) => setAiConfigState({ ...aiConfig, apiKey: e.target.value })}
+            placeholder="sk-..."
+          />
+          <p className="ai-key-hint">
+            {t('ai.getKeyHint')}{' '}
+            <a href={PROVIDER_KEY_URLS[aiConfig.provider]} target="_blank" rel="noopener noreferrer">
+              {PROVIDER_KEY_URLS[aiConfig.provider].replace('https://', '')}
+            </a>
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="admin-btn secondary"
+            onClick={handleTestAI}
+            disabled={aiTesting || !aiConfig.apiKey}
+          >
+            {aiTesting ? <Loader size={14} className="spin" /> : null}
+            {t('ai.testBtn')}
+          </button>
+          <button className="admin-btn primary" onClick={handleSaveAI}>
+            {aiSaved ? <Check size={14} /> : null}
+            {aiSaved ? (isHe ? 'נשמר!' : 'Saved!') : t('ai.saveConfig')}
+          </button>
+        </div>
+
+        {aiTestResult && (
+          <div className={`ai-test-result ${aiTestResult.includes('✓') || aiTestResult.toLowerCase().includes('ok') ? 'ok' : 'err'}`}>
+            {aiTestResult}
+          </div>
+        )}
+      </div>
 
       {/* Trip Info */}
       <div className="admin-section">

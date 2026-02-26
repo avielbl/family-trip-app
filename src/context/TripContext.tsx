@@ -14,6 +14,7 @@ import type {
   FamilyMember,
   TravelLogEntry,
 } from '../types/trip';
+import type { PassportStamp, EarnedStamp } from '../types/ai';
 import {
   subscribeTripDays,
   subscribeFlights,
@@ -26,6 +27,8 @@ import {
   subscribePhotos,
   subscribeQuizAnswers,
   subscribeTravelLog,
+  subscribePassportStamps,
+  subscribeEarnedStamps,
   getTripConfig,
   joinTrip,
 } from '../firebase/tripService';
@@ -49,6 +52,8 @@ interface TripContextType {
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
+  passportStamps: PassportStamp[];
+  earnedStamps: EarnedStamp[];
   setTripCode: (code: string) => Promise<boolean>;
   setCurrentMember: (member: FamilyMember) => void;
   todayDayIndex: number;
@@ -84,6 +89,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
   const [travelLog, setTravelLog] = useState<TravelLogEntry[]>([]);
+  const [passportStamps, setPassportStamps] = useState<PassportStamp[]>([]);
+  const [earnedStamps, setEarnedStamps] = useState<EarnedStamp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,6 +170,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     unsubs.push(subscribePhotos(tripCode, setPhotos));
     unsubs.push(subscribeQuizAnswers(tripCode, setQuizAnswers));
     unsubs.push(subscribeTravelLog(tripCode, setTravelLog));
+    unsubs.push(subscribePassportStamps(tripCode, setPassportStamps));
+    unsubs.push(subscribeEarnedStamps(tripCode, setEarnedStamps));
 
     return () => unsubs.forEach((u) => u());
   }, [tripCode]);
@@ -203,6 +212,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         photos,
         quizAnswers,
         travelLog,
+        passportStamps,
+        earnedStamps,
         loading,
         error,
         isAdmin,

@@ -14,11 +14,13 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { saveHotel, deleteHotel } from '../firebase/tripService';
 import type { Hotel } from '../types/trip';
+import AIImportModal from '../components/AIImportModal';
 
 function emptyHotel(): Hotel {
   return {
@@ -38,6 +40,7 @@ const HotelsPage: React.FC = () => {
   const { hotels, tripCode, isAdmin } = useTripContext();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editItem, setEditItem] = useState<Hotel | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const isHe = i18n.language === 'he';
 
   const sortedHotels = useMemo(() => {
@@ -102,6 +105,29 @@ const HotelsPage: React.FC = () => {
     await deleteHotel(tripCode, id);
   }
 
+  async function handleImportHotels(items: Record<string, unknown>[]) {
+    if (!tripCode) return;
+    for (const item of items) {
+      const hotel: Hotel = {
+        id: `hotel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dayIndexStart: Number(item.dayIndexStart ?? 0),
+        dayIndexEnd: Number(item.dayIndexEnd ?? 1),
+        name: String(item.name ?? ''),
+        address: String(item.address ?? ''),
+        city: String(item.city ?? ''),
+        checkIn: String(item.checkIn ?? ''),
+        checkOut: String(item.checkOut ?? ''),
+        confirmationCode: item.confirmationCode ? String(item.confirmationCode) : undefined,
+        wifiPassword: item.wifiPassword ? String(item.wifiPassword) : undefined,
+        phone: item.phone ? String(item.phone) : undefined,
+        email: item.email ? String(item.email) : undefined,
+        notes: item.notes ? String(item.notes) : undefined,
+      };
+      await saveHotel(tripCode, hotel);
+    }
+    setShowImport(false);
+  }
+
   return (
     <div className="hotels-page">
       <h1 className="page-title">{t('hotels.title')}</h1>
@@ -110,6 +136,9 @@ const HotelsPage: React.FC = () => {
         <div className="admin-add-bar">
           <button className="admin-icon-btn add" onClick={() => setEditItem(emptyHotel())}>
             <Plus size={14} /> {isHe ? 'הוסף מלון' : 'Add Hotel'}
+          </button>
+          <button className="admin-icon-btn ai-import-btn" onClick={() => setShowImport(true)}>
+            <Sparkles size={14} /> {isHe ? 'ייבוא AI' : 'AI Import'}
           </button>
         </div>
       )}
@@ -235,6 +264,14 @@ const HotelsPage: React.FC = () => {
 
       {editItem && (
         <HotelModal hotel={editItem} isHe={isHe} onSave={handleSave} onClose={() => setEditItem(null)} t={t} />
+      )}
+
+      {showImport && (
+        <AIImportModal
+          target="hotel"
+          onAccept={handleImportHotels}
+          onClose={() => setShowImport(false)}
+        />
       )}
     </div>
   );

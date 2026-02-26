@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UtensilsCrossed, Star, MapPin, Phone, ExternalLink, DollarSign, Plus, Pencil, Trash2 } from 'lucide-react';
+import { UtensilsCrossed, Star, MapPin, Phone, ExternalLink, DollarSign, Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { rateRestaurant, saveRestaurant, deleteRestaurant } from '../firebase/tripService';
 import type { Restaurant } from '../types/trip';
+import AIImportModal from '../components/AIImportModal';
+import AISuggestPanel from '../components/AISuggestPanel';
 
 function emptyRestaurant(): Restaurant {
   return { id: `rest-${Date.now()}`, name: '', ratings: {}, visited: false };
@@ -13,10 +15,11 @@ type FilterTab = 'all' | 'visited' | 'notVisited';
 
 const RestaurantsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { restaurants, tripCode, currentMember, isAdmin } = useTripContext();
+  const { restaurants, hotels, driving, days, tripCode, currentMember, isAdmin } = useTripContext();
   const [editItem, setEditItem] = useState<Restaurant | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [hoveredStars, setHoveredStars] = useState<Record<string, number>>({});
+  const [showImport, setShowImport] = useState(false);
 
   const isHebrew = i18n.language === 'he';
 
@@ -97,17 +100,71 @@ const RestaurantsPage: React.FC = () => {
     await deleteRestaurant(tripCode, id);
   }
 
+  async function handleImportRestaurants(items: Record<string, unknown>[]) {
+    if (!tripCode) return;
+    for (const item of items) {
+      const restaurant: Restaurant = {
+        id: `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: String(item.name ?? ''),
+        nameHe: item.nameHe ? String(item.nameHe) : undefined,
+        cuisine: item.cuisine ? String(item.cuisine) : undefined,
+        city: item.city ? String(item.city) : undefined,
+        address: item.address ? String(item.address) : undefined,
+        phone: item.phone ? String(item.phone) : undefined,
+        priceRange: (['$', '$$', '$$$'].includes(String(item.priceRange ?? ''))
+          ? item.priceRange as '$' | '$$' | '$$$'
+          : undefined),
+        notes: item.notes ? String(item.notes) : undefined,
+        ratings: {},
+        visited: false,
+      };
+      await saveRestaurant(tripCode, restaurant);
+    }
+    setShowImport(false);
+  }
+
+  async function handleAcceptSuggestions(items: Record<string, unknown>[]) {
+    if (!tripCode) return;
+    for (const item of items) {
+      const restaurant: Restaurant = {
+        id: `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: String(item.name ?? ''),
+        nameHe: item.nameHe ? String(item.nameHe) : undefined,
+        cuisine: item.cuisine ? String(item.cuisine) : undefined,
+        city: item.city ? String(item.city) : undefined,
+        address: item.address ? String(item.address) : undefined,
+        notes: item.rationale ? String(item.rationale) : undefined,
+        ratings: {},
+        visited: false,
+      };
+      await saveRestaurant(tripCode, restaurant);
+    }
+  }
+
   return (
     <div className="restaurants-page" dir={isHebrew ? 'rtl' : 'ltr'}>
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
         <UtensilsCrossed size={24} />
         <h1 className="page-title" style={{ margin: 0 }}>{t('restaurants.title')}</h1>
         {isAdmin && (
-          <button className="admin-icon-btn add" style={{ marginInlineStart: 'auto' }} onClick={() => setEditItem(emptyRestaurant())}>
-            <Plus size={14} /> {isHebrew ? 'הוסף' : 'Add'}
-          </button>
+          <div style={{ marginInlineStart: 'auto', display: 'flex', gap: '8px' }}>
+            <button className="admin-icon-btn add" onClick={() => setEditItem(emptyRestaurant())}>
+              <Plus size={14} /> {isHebrew ? 'הוסף' : 'Add'}
+            </button>
+            <button className="admin-icon-btn ai-import-btn" onClick={() => setShowImport(true)}>
+              <Sparkles size={14} /> {isHebrew ? 'ייבוא AI' : 'AI Import'}
+            </button>
+          </div>
         )}
       </div>
+
+      {isAdmin && (
+        <AISuggestPanel
+          type="restaurant"
+          context={{ hotels, driving, days, existing: restaurants }}
+          onAccept={handleAcceptSuggestions}
+        />
+      )}
 
       <div className="filter-tabs">
         <button
@@ -218,6 +275,14 @@ const RestaurantsPage: React.FC = () => {
           onSave={handleSave}
           onClose={() => setEditItem(null)}
           t={t}
+        />
+      )}
+
+      {showImport && (
+        <AIImportModal
+          target="restaurant"
+          onAccept={handleImportRestaurants}
+          onClose={() => setShowImport(false)}
         />
       )}
     </div>

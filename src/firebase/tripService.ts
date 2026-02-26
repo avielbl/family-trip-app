@@ -312,6 +312,49 @@ export function subscribeTravelLog(
   });
 }
 
+// Passport Stamps
+export function subscribePassportStamps(
+  tripCode: string,
+  callback: (stamps: import('../types/ai').PassportStamp[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'trips', tripCode, 'passportStamps');
+  return onSnapshot(colRef, (snap) => {
+    callback(snap.docs.map((d) => d.data() as import('../types/ai').PassportStamp));
+  });
+}
+
+export async function savePassportStamp(
+  tripCode: string,
+  stamp: import('../types/ai').PassportStamp
+): Promise<void> {
+  await setDoc(doc(db, 'trips', tripCode, 'passportStamps', stamp.id), stamp);
+}
+
+export async function deletePassportStamp(tripCode: string, stampId: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'passportStamps', stampId));
+}
+
+export function subscribeEarnedStamps(
+  tripCode: string,
+  callback: (earned: import('../types/ai').EarnedStamp[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'trips', tripCode, 'earnedStamps');
+  return onSnapshot(colRef, (snap) => {
+    callback(snap.docs.map((d) => d.data() as import('../types/ai').EarnedStamp));
+  });
+}
+
+export async function earnStamp(
+  tripCode: string,
+  memberId: string,
+  stampId: string
+): Promise<void> {
+  const id = `${memberId}_${stampId}`;
+  await setDoc(doc(db, 'trips', tripCode, 'earnedStamps', id), {
+    id, stampId, memberId, earnedAt: new Date().toISOString(),
+  });
+}
+
 // Bulk import (for parsed confirmation data)
 export async function importTripData(
   tripCode: string,
