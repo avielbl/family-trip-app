@@ -55,11 +55,25 @@
 | P5-02 | Finalize `docs/PLAN.md` with architecture + user stories | ✅ Done |
 | P5-03 | Finalize `docs/TASKS.md` with all tasks + statuses | ✅ Done |
 | P5-04 | Add all i18n keys (en.ts + he.ts) for new features | ✅ Done |
-| P5-05 | End-to-end smoke test across all phases; fix regressions | 🔄 In Progress |
+| P5-05 | End-to-end smoke test across all phases; fix regressions | ✅ Done |
 
 ---
 
 ## Phase 6 — AI Content Engine
+
+| Task | Description | Status |
+|------|-------------|--------|
+| P6-01 | AI service layer (`aiService.ts` + `types/ai.ts`) | ✅ Done |
+| P6-02 | i18n keys + CSS classes for Phase 6 UI | ✅ Done |
+| P6-03 | Admin AI Config section (AdminPage update) | ✅ Done |
+| P6-04 | AIImportModal component (generic) | ✅ Done |
+| P6-05 | AISuggestPanel component (generic) | ✅ Done |
+| P6-06 | Passport stamp Firestore service + updated PassportPage | ✅ Done |
+| P6-07 | RestaurantsPage — AI Import + AI Suggest | ✅ Done |
+| P6-08 | HighlightsPage — AI Import + AI Suggest | ✅ Done |
+| P6-09 | Hotels + Flights pages — AI Import | ✅ Done |
+| P6-10 | PassportPage — Generate Stamps wired up | ✅ Done |
+| P6-11 | End-to-end smoke test + docs finalize | ✅ Done |
 
 ### Dependency Graph
 
