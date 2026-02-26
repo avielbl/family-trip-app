@@ -106,7 +106,7 @@ const HotelsPage: React.FC = () => {
   }
 
   async function handleImportHotels(items: Record<string, unknown>[]) {
-    if (!tripCode) return;
+    if (!tripCode) throw new Error('No trip code');
     for (const item of items) {
       const hotel: Hotel = {
         id: `hotel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -125,7 +125,6 @@ const HotelsPage: React.FC = () => {
       };
       await saveHotel(tripCode, hotel);
     }
-    setShowImport(false);
   }
 
   return (

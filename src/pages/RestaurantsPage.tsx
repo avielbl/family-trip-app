@@ -101,7 +101,7 @@ const RestaurantsPage: React.FC = () => {
   }
 
   async function handleImportRestaurants(items: Record<string, unknown>[]) {
-    if (!tripCode) return;
+    if (!tripCode) throw new Error('No trip code');
     for (const item of items) {
       const restaurant: Restaurant = {
         id: `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -120,7 +120,6 @@ const RestaurantsPage: React.FC = () => {
       };
       await saveRestaurant(tripCode, restaurant);
     }
-    setShowImport(false);
   }
 
   async function handleAcceptSuggestions(items: Record<string, unknown>[]) {

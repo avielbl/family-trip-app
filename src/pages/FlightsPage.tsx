@@ -64,7 +64,7 @@ const FlightsPage: React.FC = () => {
   }
 
   async function handleImportFlights(items: Record<string, unknown>[]) {
-    if (!tripCode) return;
+    if (!tripCode) throw new Error('No trip code');
     for (const item of items) {
       const flight: Flight = {
         id: `flight-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -84,7 +84,6 @@ const FlightsPage: React.FC = () => {
       };
       await saveFlight(tripCode, flight);
     }
-    setShowImport(false);
   }
 
   return (

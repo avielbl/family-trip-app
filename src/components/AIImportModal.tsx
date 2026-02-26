@@ -12,7 +12,7 @@ import type { ImportTarget, AIImportResult } from '../types/ai';
 
 interface AIImportModalProps {
   target: ImportTarget;
-  onAccept: (items: Record<string, any>[]) => void;
+  onAccept: (items: Record<string, any>[]) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -94,9 +94,15 @@ export default function AIImportModal({ target, onAccept, onClose }: AIImportMod
     );
   }
 
-  function handleSave() {
-    onAccept(results.filter((r) => r.accepted).map((r) => r.data));
-    onClose();
+  async function handleSave() {
+    setModalState('processing');
+    try {
+      await onAccept(results.filter((r) => r.accepted).map((r) => r.data));
+      onClose();
+    } catch (e) {
+      setError(aiErrorMessage(e, isHe));
+      setModalState('error');
+    }
   }
 
   const canAnalyze = files.length > 0 || pasteText.trim().length > 0;

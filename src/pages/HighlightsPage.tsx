@@ -105,7 +105,7 @@ const HighlightsPage: React.FC = () => {
   }
 
   async function handleImportHighlights(items: Record<string, unknown>[]) {
-    if (!tripCode) return;
+    if (!tripCode) throw new Error('No trip code');
     for (const item of items) {
       const highlight: Highlight = {
         id: `hl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -125,7 +125,6 @@ const HighlightsPage: React.FC = () => {
       };
       await saveHighlight(tripCode, highlight);
     }
-    setShowImport(false);
   }
 
   async function handleAcceptSuggestions(items: Record<string, unknown>[]) {
