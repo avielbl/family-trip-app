@@ -19,6 +19,9 @@ export default {
     setup: 'הגדרה',
     travelLog: 'יומן טיול',
     admin: 'ניהול',
+    weather: 'מזג אוויר',
+    map: 'מפה',
+    itinerary: 'תכנית',
   },
   home: {
     countdown: '{{days}} ימים עד יוון!',
