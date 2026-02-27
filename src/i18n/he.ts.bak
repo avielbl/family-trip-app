@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: 'טריפיט',
+    title: 'טיול יוון 2026',
     subtitle: 'הרפתקה משפחתית',
   },
   nav: {
@@ -19,9 +19,6 @@ export default {
     setup: 'הגדרה',
     travelLog: 'יומן טיול',
     admin: 'ניהול',
-    weather: 'מזג אוויר',
-    map: 'מפה',
-    itinerary: 'תכנית',
   },
   home: {
     countdown: '{{days}} ימים עד יוון!',
@@ -96,12 +93,6 @@ export default {
     allCollected: 'כל החותמות נאספו! 🏆',
     earnStamp: 'בקרו כדי לקבל חותמת',
     dayStamp: 'יום {{day}}',
-    stamps: 'חותמות',
-    earnBtn: 'אסוף',
-    stampEarned: 'נאספה! ✓',
-    noStamps: 'אין חותמות עדיין — מנהל יכול לייצר אותן עם AI',
-    visitToEarn: 'בקר ב{{name}} כדי לצבור',
-    manualEarn: 'לחץ לאיסוף החותמת',
   },
   photos: {
     title: 'יומן תמונות',
@@ -215,5 +206,13 @@ export default {
     foundItems: 'נמצאו {{count}} פריטים',
     acceptAll: 'קבל הכל',
     noSuggestions: 'לא נמצאו הצעות — נסה שוב',
+  },
+  passport: {
+    stamps: 'חותמות',
+    earnBtn: 'אסוף',
+    stampEarned: 'נאספה! ✓',
+    noStamps: 'אין חותמות עדיין — מנהל יכול לייצר אותן עם AI',
+    visitToEarn: 'בקר ב{{name}} כדי לצבור',
+    manualEarn: 'לחץ לאיסוף החותמת',
   },
 };

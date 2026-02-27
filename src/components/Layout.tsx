@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTripContext } from '../context/TripContext';
+import ToastNotifications from './ToastNotifications';
 
 const baseNavItems = [
   { path: '/', icon: Home, labelKey: 'nav.home' },
@@ -123,6 +124,9 @@ export default function Layout() {
           </nav>
         </div>
       )}
+
+      {/* Notifications */}
+      <ToastNotifications />
 
       {/* Main Content */}
       <main className="main-content">

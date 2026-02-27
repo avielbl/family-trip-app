@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type {
   TripConfig,
   TripDay,
@@ -60,6 +60,8 @@ interface TripContextType {
   daysUntilTrip: number;
   tripStarted: boolean;
   tripEnded: boolean;
+  hotelChangeBanner: boolean;
+  dismissHotelBanner: () => void;
 }
 
 const TripContext = createContext<TripContextType | null>(null);
@@ -93,6 +95,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [earnedStamps, setEarnedStamps] = useState<EarnedStamp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hotelChangeBanner, setHotelChangeBanner] = useState(false);
+  const prevHotelsRef = useRef<Hotel[] | null>(null);
+  const isFirstHotelLoad = useRef(true);
 
   // Restore member from localStorage (for non-Google users)
   useEffect(() => {
@@ -176,6 +181,33 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     return () => unsubs.forEach((u) => u());
   }, [tripCode]);
 
+  // Hotel change detection (admin only)
+  useEffect(() => {
+    if (!isAdmin) {
+      prevHotelsRef.current = hotels;
+      return;
+    }
+    if (isFirstHotelLoad.current) {
+      prevHotelsRef.current = hotels;
+      isFirstHotelLoad.current = false;
+      return;
+    }
+    const prev = prevHotelsRef.current;
+    if (prev !== null) {
+      const changed =
+        prev.length !== hotels.length ||
+        hotels.some((h) => {
+          const old = prev.find((p) => p.id === h.id);
+          return !old || old.city !== h.city || old.checkIn !== h.checkIn || old.checkOut !== h.checkOut;
+        }) ||
+        prev.some((p) => !hotels.find((h) => h.id === p.id));
+      if (changed) {
+        setHotelChangeBanner(true);
+      }
+    }
+    prevHotelsRef.current = hotels;
+  }, [hotels, isAdmin]);
+
   // Determine currentMember (Google-matched or manually selected)
   const currentMember = currentMemberState;
 
@@ -223,6 +255,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         daysUntilTrip,
         tripStarted,
         tripEnded,
+        hotelChangeBanner,
+        dismissHotelBanner: () => setHotelChangeBanner(false),
       }}
     >
       {children}

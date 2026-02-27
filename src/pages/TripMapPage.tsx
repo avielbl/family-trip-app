@@ -1,8 +1,8 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Building2, Star } from 'lucide-react';
+import { MapPin, Building2, Star, Layers, UtensilsCrossed } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
-import type { Hotel, Highlight } from '../types/trip';
+import type { Hotel, Highlight, Restaurant } from '../types/trip';
 
 // ─── City coords fallback ─────────────────────────────────────────────────────
 
@@ -47,6 +47,13 @@ function getHighlightCoords(hl: Highlight): { lat: number; lng: number } | null 
   return null;
 }
 
+function getRestaurantCoords(r: Restaurant): { lat: number; lng: number } | null {
+  if (r.lat && r.lng) return { lat: r.lat, lng: r.lng };
+  if (r.city) return getCityCoords(r.city);
+  if (r.address) return getCityCoords(r.address);
+  return null;
+}
+
 // ─── Category icon colors ─────────────────────────────────────────────────────
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -61,14 +68,29 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: '#6b7280',
 };
 
+// ─── Tile layers ──────────────────────────────────────────────────────────────
+
+const TILE_LAYERS = {
+  streets: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  },
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '© <a href="https://www.esri.com">Esri</a>',
+    maxZoom: 19,
+  },
+};
+
 // ─── Map Legend data ──────────────────────────────────────────────────────────
 
 const LEGEND_ITEMS = [
   { color: '#1d4ed8', label: 'Hotel', labelHe: 'מלון' },
+  { color: '#16a34a', label: 'Restaurant', labelHe: 'מסעדה' },
   { color: '#0ea5e9', label: 'Beach', labelHe: 'חוף' },
   { color: '#b45309', label: 'Ruins / Historic', labelHe: 'חורבות' },
   { color: '#7c3aed', label: 'Museum', labelHe: 'מוזיאון' },
-  { color: '#dc2626', label: 'Food / Restaurant', labelHe: 'אוכל' },
   { color: '#15803d', label: 'Nature', labelHe: 'טבע' },
   { color: '#ea580c', label: 'Viewpoint', labelHe: 'תצפית' },
 ];
@@ -78,9 +100,11 @@ const LEGEND_ITEMS = [
 export default function TripMapPage() {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
-  const { hotels, highlights } = useTripContext();
+  const { hotels, highlights, restaurants } = useTripContext();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
+  const tileLayerRef = useRef<import('leaflet').TileLayer | null>(null);
+  const [tileMode, setTileMode] = useState<'streets' | 'satellite'>('streets');
 
   // Sorted hotels by check-in date (defines the route)
   const sortedHotels = useMemo(
@@ -112,6 +136,18 @@ export default function TripMapPage() {
     [highlights]
   );
 
+  // Restaurant coords
+  const restaurantPoints = useMemo(
+    () =>
+      restaurants
+        .map((r) => {
+          const c = getRestaurantCoords(r);
+          return c ? { restaurant: r, lat: c.lat, lng: c.lng } : null;
+        })
+        .filter(Boolean) as { restaurant: Restaurant; lat: number; lng: number }[],
+    [restaurants]
+  );
+
   // Default center: center of Greece
   const defaultCenter: [number, number] = [38.5, 23.0];
   const defaultZoom = 6;
@@ -141,11 +177,13 @@ export default function TripMapPage() {
       });
       mapRef.current = map;
 
-      // OpenStreetMap tiles (free, no API key)
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-      }).addTo(map);
+      // Initial tile layer (streets)
+      const tl = L.tileLayer(TILE_LAYERS.streets.url, {
+        attribution: TILE_LAYERS.streets.attribution,
+        maxZoom: TILE_LAYERS.streets.maxZoom,
+      });
+      tl.addTo(map);
+      tileLayerRef.current = tl;
 
       const allLatLngs: [number, number][] = [];
 
@@ -230,6 +268,38 @@ export default function TripMapPage() {
           );
       });
 
+      // ── Restaurant markers (green fork) ───────────────────────────
+      restaurantPoints.forEach((pt) => {
+        const r = pt.restaurant;
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            background:#16a34a;color:#fff;
+            border:2px solid #fff;border-radius:50%;
+            width:22px;height:22px;display:flex;
+            align-items:center;justify-content:center;
+            font-size:12px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.25);
+          ">🍴</div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+          popupAnchor: [0, -14],
+        });
+
+        allLatLngs.push([pt.lat, pt.lng]);
+        L.marker([pt.lat, pt.lng], { icon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="font-family:Inter,sans-serif;min-width:140px;">
+              <strong style="color:#16a34a">🍴 ${r.name}</strong><br/>
+              ${r.cuisine ? `<span style="font-size:11px;color:#6b7280">${r.cuisine}</span><br/>` : ''}
+              ${r.city ? `<span style="font-size:11px;color:#6b7280">${r.city}</span>` : ''}
+              ${r.priceRange ? `<br/><span style="font-size:11px">${r.priceRange}</span>` : ''}
+              ${r.visited ? '<br/><span style="font-size:11px;color:#16a34a">✓ Visited</span>' : ''}
+            </div>`
+          );
+      });
+
       // ── Fit bounds to all markers ─────────────────────────────────
       if (allLatLngs.length > 0) {
         map.fitBounds(allLatLngs, { padding: [40, 40] });
@@ -240,7 +310,20 @@ export default function TripMapPage() {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [hotelPoints, highlightPoints]);
+  }, [hotelPoints, highlightPoints, restaurantPoints]);
+
+  // Handle tile layer toggle without rebuilding the map
+  useEffect(() => {
+    if (!mapRef.current || !tileLayerRef.current) return;
+    import('leaflet').then((L) => {
+      if (!mapRef.current) return;
+      tileLayerRef.current?.remove();
+      const cfg = TILE_LAYERS[tileMode];
+      const tl = L.tileLayer(cfg.url, { attribution: cfg.attribution, maxZoom: cfg.maxZoom });
+      tl.addTo(mapRef.current);
+      tileLayerRef.current = tl;
+    });
+  }, [tileMode]);
 
   return (
     <div className="trip-map-page">
@@ -250,11 +333,22 @@ export default function TripMapPage() {
       <p className="page-subtitle">
         {isRTL
           ? 'מפה מלאה של הטיול עם מלונות, אטרקציות ומסלול הנסיעה'
-          : 'Full trip map with hotels, highlights, and driving route'}
+          : 'Full trip map with hotels, highlights, restaurants, and driving route'}
       </p>
 
       {/* ─── Map Container ──────────────────────────────────────── */}
-      <div className="map-container" ref={mapContainerRef} />
+      <div style={{ position: 'relative' }}>
+        <div className="map-container" ref={mapContainerRef} />
+        {/* Satellite toggle button */}
+        <button
+          className="map-layer-toggle"
+          onClick={() => setTileMode((m) => m === 'streets' ? 'satellite' : 'streets')}
+          title={tileMode === 'streets' ? 'Switch to satellite' : 'Switch to streets'}
+        >
+          <Layers size={16} />
+          <span>{tileMode === 'streets' ? (isRTL ? 'לוויין' : 'Satellite') : (isRTL ? 'רחובות' : 'Streets')}</span>
+        </button>
+      </div>
 
       {/* ─── Legend ─────────────────────────────────────────────── */}
       <div className="map-legend">
@@ -309,7 +403,12 @@ export default function TripMapPage() {
           <span className="map-stat-label">{isRTL ? 'אטרקציות' : 'Highlights'}</span>
         </div>
         <div className="map-stat">
-          <MapPin size={20} color="#16a34a" />
+          <UtensilsCrossed size={20} color="#16a34a" />
+          <span className="map-stat-num">{restaurants.length}</span>
+          <span className="map-stat-label">{isRTL ? 'מסעדות' : 'Restaurants'}</span>
+        </div>
+        <div className="map-stat">
+          <MapPin size={20} color="#6b7280" />
           <span className="map-stat-num">{new Set(hotels.map((h) => h.city)).size}</span>
           <span className="map-stat-label">{isRTL ? 'ערים' : 'Cities'}</span>
         </div>

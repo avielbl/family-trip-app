@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt'],
       manifest: {
-        name: 'Greece Family Trip 2026',
-        short_name: 'Greece Trip',
-        description: 'Family trip planner for Greece - March 2026',
+        name: 'TripIt',
+        short_name: 'TripIt',
+        description: 'TripIt — Family adventure planner for Greece 2026',
         theme_color: '#1e40af',
         background_color: '#f0f9ff',
         display: 'standalone',

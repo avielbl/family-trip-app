@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: 'TripIt',
+    title: 'Greece Trip 2026',
     subtitle: 'Family Adventure',
   },
   nav: {
@@ -19,9 +19,6 @@ export default {
     setup: 'Setup',
     travelLog: 'Travel Log',
     admin: 'Admin',
-    weather: 'Weather',
-    map: 'Map',
-    itinerary: 'Itinerary',
   },
   home: {
     countdown: '{{days}} days until Greece!',
@@ -96,12 +93,6 @@ export default {
     allCollected: 'All stamps collected! 🏆',
     earnStamp: 'Visit to earn stamp',
     dayStamp: 'Day {{day}}',
-    stamps: 'Stamps',
-    earnBtn: 'Collect',
-    stampEarned: 'Earned! ✓',
-    noStamps: 'No stamps yet — admin can generate them with AI',
-    visitToEarn: 'Visit {{name}} to earn',
-    manualEarn: 'Tap to collect this stamp',
   },
   photos: {
     title: 'Photo Journal',
@@ -215,5 +206,13 @@ export default {
     foundItems: 'Found {{count}} item(s)',
     acceptAll: 'Accept All',
     noSuggestions: 'No suggestions found — try again',
+  },
+  passport: {
+    stamps: 'Stamps',
+    earnBtn: 'Collect',
+    stampEarned: 'Earned! ✓',
+    noStamps: 'No stamps yet — admin can generate them with AI',
+    visitToEarn: 'Visit {{name}} to earn',
+    manualEarn: 'Tap to collect this stamp',
   },
 };
