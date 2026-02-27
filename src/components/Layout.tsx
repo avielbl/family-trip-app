@@ -18,12 +18,18 @@ import {
   Sun,
   BookOpen,
   Shield,
+  CloudSun,
+  Map,
+  CalendarDays,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTripContext } from '../context/TripContext';
 
 const baseNavItems = [
   { path: '/', icon: Home, labelKey: 'nav.home' },
+  { path: '/itinerary', icon: CalendarDays, labelKey: 'nav.itinerary' },
+  { path: '/weather', icon: CloudSun, labelKey: 'nav.weather' },
+  { path: '/map', icon: Map, labelKey: 'nav.map' },
   { path: '/flights', icon: Plane, labelKey: 'nav.flights' },
   { path: '/hotels', icon: Hotel, labelKey: 'nav.hotels' },
   { path: '/driving', icon: Car, labelKey: 'nav.driving' },
@@ -127,10 +133,10 @@ export default function Layout() {
       <nav className="bottom-nav">
         {[
           { path: '/', icon: Home, labelKey: 'nav.home' },
-          { path: '/flights', icon: Plane, labelKey: 'nav.flights' },
+          { path: '/itinerary', icon: CalendarDays, labelKey: 'nav.itinerary' },
+          { path: '/weather', icon: CloudSun, labelKey: 'nav.weather' },
+          { path: '/map', icon: Map, labelKey: 'nav.map' },
           { path: '/highlights', icon: MapPin, labelKey: 'nav.highlights' },
-          { path: '/photos', icon: Camera, labelKey: 'nav.photos' },
-          { path: '/passport', icon: Stamp, labelKey: 'nav.passport' },
         ].map((item) => (
           <button
             key={item.path}

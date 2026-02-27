@@ -19,6 +19,9 @@ export default {
     setup: 'Setup',
     travelLog: 'Travel Log',
     admin: 'Admin',
+    weather: 'Weather',
+    map: 'Map',
+    itinerary: 'Itinerary',
   },
   home: {
     countdown: '{{days}} days until Greece!',

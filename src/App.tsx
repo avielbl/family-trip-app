@@ -17,6 +17,9 @@ import SetupPage from './pages/SetupPage';
 import JoinPage from './pages/JoinPage';
 import AdminPage from './pages/AdminPage';
 import TravelLogPage from './pages/TravelLogPage';
+import WeatherPage from './pages/WeatherPage';
+import TripMapPage from './pages/TripMapPage';
+import ItineraryPage from './pages/ItineraryPage';
 import './i18n';
 
 function AppRoutes() {
@@ -61,6 +64,9 @@ function AppRoutes() {
         <Route path="/packing" element={<PackingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/travel-log" element={<TravelLogPage />} />
+        <Route path="/weather" element={<WeatherPage />} />
+        <Route path="/map" element={<TripMapPage />} />
+        <Route path="/itinerary" element={<ItineraryPage />} />
         <Route path="/admin" element={<AdminPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
