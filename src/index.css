@@ -133,6 +133,20 @@ body {
 .top-title {
   font-size: 18px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+
+.top-logo {
+  height: 32px;
+  width: auto;
+  display: block;
+  /* Invert in dark mode so the dark navy text reads on the blue top bar */
+  filter: brightness(0) invert(1);
+}
+[data-theme="dark"] .top-logo {
+  filter: brightness(0) invert(1);
 }
 
 .menu-btn, .lang-btn {

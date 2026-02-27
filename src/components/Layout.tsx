@@ -81,7 +81,9 @@ export default function Layout() {
         <button className="menu-btn" onClick={() => setMenuOpen(!menuOpen)}>
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <h1 className="top-title">{t('app.title')}</h1>
+        <h1 className="top-title">
+          <img src="/logo.PNG" alt="TripIt" className="top-logo" />
+        </h1>
         <button
           className="menu-btn"
           onClick={() => setDarkMode(!darkMode)}
