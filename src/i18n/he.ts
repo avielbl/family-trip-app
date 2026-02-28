@@ -18,6 +18,8 @@ export default {
     settings: 'הגדרות',
     setup: 'הגדרה',
     travelLog: 'יומן טיול',
+    weather: 'מזג אוויר',
+    map: 'מפה',
     admin: 'ניהול',
   },
   home: {
@@ -159,6 +161,14 @@ export default {
     enterCode: 'הכנס קוד טיול',
     createTrip: 'צור טיול חדש',
     or: 'או',
+  },
+  weather: {
+    title: 'תחזית מזג אוויר',
+    snowForecast: 'תחזית שלג — קיימקצ\'אלאן',
+    hotelForecasts: 'תחזיות לפי מיקום מלון',
+  },
+  map: {
+    title: 'מפת מסלול הטיול',
   },
   common: {
     loading: 'טוען...',

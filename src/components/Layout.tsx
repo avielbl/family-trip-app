@@ -18,6 +18,8 @@ import {
   Sun,
   BookOpen,
   Shield,
+  CloudSun,
+  Map,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTripContext } from '../context/TripContext';
@@ -33,6 +35,8 @@ const baseNavItems = [
   { path: '/photos', icon: Camera, labelKey: 'nav.photos' },
   { path: '/quiz', icon: HelpCircle, labelKey: 'nav.quiz' },
   { path: '/packing', icon: CheckSquare, labelKey: 'nav.packing' },
+  { path: '/weather', icon: CloudSun, labelKey: 'nav.weather' },
+  { path: '/map', icon: Map, labelKey: 'nav.map' },
   { path: '/travel-log', icon: BookOpen, labelKey: 'nav.travelLog' },
   { path: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];

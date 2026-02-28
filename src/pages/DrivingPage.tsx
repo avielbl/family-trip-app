@@ -181,17 +181,10 @@ const DrivingPage: React.FC = () => {
 
       {/* Modals */}
       {editSeg && (
-        <SimpleModal
-          title={isHe ? 'מסלול נסיעה' : 'Driving Segment'}
-          fields={[
-            { key: 'from', label: isHe ? 'מ-' : 'From' },
-            { key: 'to', label: isHe ? 'אל' : 'To' },
-            { key: 'distanceKm', label: isHe ? 'מרחק (ק"מ)' : 'Distance (km)' },
-            { key: 'durationMinutes', label: isHe ? 'משך (דקות)' : 'Duration (min)' },
-            { key: 'notes', label: isHe ? 'הערות' : 'Notes' },
-          ]}
-          data={editSeg as any}
-          onSave={(d) => handleSaveSeg(d as DrivingSegment)}
+        <DrivingSegmentModal
+          segment={editSeg}
+          isHe={isHe}
+          onSave={handleSaveSeg}
           onClose={() => setEditSeg(null)}
           t={t}
         />
@@ -219,6 +212,177 @@ const DrivingPage: React.FC = () => {
     </div>
   );
 };
+
+// Geocode a place name via Nominatim
+async function geocodePlace(place: string): Promise<[number, number] | null> {
+  try {
+    const q = encodeURIComponent(`${place}, Greece`);
+    const resp = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
+      { headers: { 'User-Agent': 'FamilyTripApp/1.0' } },
+    );
+    const data = await resp.json();
+    if (!data.length) return null;
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  } catch {
+    return null;
+  }
+}
+
+// Calculate real driving distance/duration via OSRM
+async function calculateOSRMRoute(
+  from: [number, number],
+  to: [number, number],
+): Promise<{ distanceKm: number; durationMin: number } | null> {
+  try {
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${from[1]},${from[0]};${to[1]},${to[0]}?overview=false`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.routes?.length) return null;
+    const leg = data.routes[0].legs[0];
+    return {
+      distanceKm: Math.round(leg.distance / 1000),
+      durationMin: Math.round(leg.duration / 60),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function DrivingSegmentModal({
+  segment,
+  isHe,
+  onSave,
+  onClose,
+  t,
+}: {
+  segment: DrivingSegment;
+  isHe: boolean;
+  onSave: (s: DrivingSegment) => void;
+  onClose: () => void;
+  t: (k: string) => string;
+}) {
+  const [form, setForm] = useState({ ...segment });
+  const [calculating, setCalculating] = useState(false);
+  const [calcError, setCalcError] = useState<string | null>(null);
+
+  function set(field: keyof DrivingSegment, value: string | number) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function handleCalculate() {
+    if (!form.from || !form.to) {
+      setCalcError(isHe ? 'נא למלא מ- ואל' : 'Fill in From and To first');
+      return;
+    }
+    setCalculating(true);
+    setCalcError(null);
+    try {
+      const [fromCoords, toCoords] = await Promise.all([
+        geocodePlace(form.from),
+        geocodePlace(form.to),
+      ]);
+      if (!fromCoords || !toCoords) {
+        setCalcError(isHe ? 'לא ניתן למצוא כתובות' : 'Could not geocode locations');
+        return;
+      }
+      const result = await calculateOSRMRoute(fromCoords, toCoords);
+      if (!result) {
+        setCalcError(isHe ? 'שגיאת ניתוב' : 'Routing error');
+        return;
+      }
+      setForm((prev) => ({
+        ...prev,
+        distanceKm: result.distanceKm,
+        durationMinutes: result.durationMin,
+      }));
+    } finally {
+      setCalculating(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">{isHe ? 'מסלול נסיעה' : 'Driving Segment'}</div>
+
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'יום (מספר)' : 'Day index'}</label>
+          <input
+            className="form-input"
+            type="number"
+            value={form.dayIndex ?? ''}
+            onChange={(e) => set('dayIndex', parseInt(e.target.value) || 0)}
+          />
+        </div>
+        {([
+          ['from', isHe ? 'מ-' : 'From'],
+          ['to', isHe ? 'אל' : 'To'],
+        ] as [keyof DrivingSegment, string][]).map(([field, label]) => (
+          <div className="form-group" key={field}>
+            <label className="form-label">{label}</label>
+            <input
+              className="form-input"
+              value={(form as any)[field] ?? ''}
+              onChange={(e) => set(field, e.target.value)}
+            />
+          </div>
+        ))}
+
+        <button
+          className="admin-btn secondary"
+          style={{ marginBottom: 10 }}
+          onClick={handleCalculate}
+          disabled={calculating}
+        >
+          {calculating
+            ? (isHe ? '...מחשב' : 'Calculating…')
+            : (isHe ? '🧭 חשב מרחק ומשך' : '🧭 Auto-calculate route')}
+        </button>
+        {calcError && (
+          <div style={{ color: 'var(--red-500)', fontSize: 12, marginBottom: 8 }}>
+            {calcError}
+          </div>
+        )}
+
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'מרחק (ק"מ)' : 'Distance (km)'}</label>
+          <input
+            className="form-input"
+            type="number"
+            value={form.distanceKm ?? ''}
+            onChange={(e) => set('distanceKm', parseFloat(e.target.value) || 0)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'משך (דקות)' : 'Duration (min)'}</label>
+          <input
+            className="form-input"
+            type="number"
+            value={form.durationMinutes ?? ''}
+            onChange={(e) => set('durationMinutes', parseFloat(e.target.value) || 0)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{isHe ? 'הערות' : 'Notes'}</label>
+          <input
+            className="form-input"
+            value={form.notes ?? ''}
+            onChange={(e) => set('notes', e.target.value)}
+          />
+        </div>
+
+        <div className="modal-actions">
+          <button className="admin-btn secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="admin-btn primary" onClick={() => onSave(form)}>{t('common.save')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SimpleModal({ title, fields, data, onSave, onClose, t }: {
   title: string;

@@ -262,6 +262,8 @@ function HotelModal({ hotel, isHe, onSave, onClose, t }: {
           ['confirmationCode', isHe ? 'קוד אישור' : 'Confirmation Code'],
           ['wifiPassword', isHe ? 'סיסמת WiFi' : 'WiFi Password'],
           ['phone', isHe ? 'טלפון' : 'Phone'],
+          ['lat', isHe ? 'קו רוחב (Latitude)' : 'Latitude (e.g. 40.640)'],
+          ['lng', isHe ? 'קו אורך (Longitude)' : 'Longitude (e.g. 22.944)'],
           ['notes', isHe ? 'הערות' : 'Notes'],
         ] as [keyof Hotel, string][]).map(([field, label]) => (
           <div className="form-group" key={field}>

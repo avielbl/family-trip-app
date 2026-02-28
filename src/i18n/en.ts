@@ -18,6 +18,8 @@ export default {
     settings: 'Settings',
     setup: 'Setup',
     travelLog: 'Travel Log',
+    weather: 'Weather',
+    map: 'Map',
     admin: 'Admin',
   },
   home: {
@@ -159,6 +161,14 @@ export default {
     enterCode: 'Enter trip code',
     createTrip: 'Create New Trip',
     or: 'or',
+  },
+  weather: {
+    title: 'Weather Forecast',
+    snowForecast: 'Snow Forecast — Kaimaktsalan',
+    hotelForecasts: 'Forecasts by Hotel Location',
+  },
+  map: {
+    title: 'Trip Route Map',
   },
   common: {
     loading: 'Loading...',

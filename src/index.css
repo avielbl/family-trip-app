@@ -1816,6 +1816,383 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* ─── Weather Page ─── */
+.weather-page {
+  padding: 16px;
+  padding-bottom: 100px;
+}
+
+.weather-trip-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.weather-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.weather-card {
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.weather-card-snow {
+  border-left: 4px solid #60a5fa;
+}
+
+.weather-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.weather-card-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.weather-card-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.weather-card-city {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.weather-card-dates {
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin-top: 2px;
+}
+
+.weather-ski-badge {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.weather-days {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weather-day-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.weather-day-label {
+  font-weight: 500;
+  min-width: 90px;
+  color: var(--text-secondary);
+}
+
+.weather-emoji {
+  font-size: 16px;
+}
+
+.weather-label-text {
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 80px;
+}
+
+.weather-temps {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+}
+
+.temp-high { color: #ef4444; }
+.temp-sep  { color: var(--text-subtle); }
+.temp-low  { color: #3b82f6; }
+
+.weather-snow-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .weather-snow-badge {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+.weather-rain-badge {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+[data-theme="dark"] .weather-rain-badge {
+  background: #0c4a6e;
+  color: #7dd3fc;
+}
+
+.weather-ski-note {
+  font-size: 11px;
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
+.weather-loading,
+.weather-error,
+.weather-no-coords,
+.weather-no-hotels {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 10px 0;
+}
+
+.weather-error { color: var(--red-500); }
+
+/* Kaimaktsalan special card */
+.weather-kaimaktsalan {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%);
+  color: #fff;
+}
+
+[data-theme="dark"] .weather-kaimaktsalan {
+  background: linear-gradient(135deg, #0c2a4a 0%, #1d4ed8 100%);
+}
+
+.kaimaktsalan-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.kaimaktsalan-icon { font-size: 32px; }
+
+.kaimaktsalan-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.kaimaktsalan-subtitle {
+  font-size: 12px;
+  color: #93c5fd;
+}
+
+.kaimaktsalan-snowflake {
+  color: #93c5fd;
+  margin-left: auto;
+}
+
+.kaimaktsalan-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.kaimaktsalan-fact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #bfdbfe;
+}
+
+.kaimaktsalan-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.2);
+  margin: 10px 0;
+}
+
+.kaimaktsalan-forecast-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #93c5fd;
+  margin-bottom: 8px;
+}
+
+.weather-kaimaktsalan .weather-day-row {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.weather-kaimaktsalan .weather-day-label { color: #bfdbfe; }
+.weather-kaimaktsalan .weather-label-text { color: #93c5fd; }
+.weather-kaimaktsalan .temp-high { color: #fca5a5; }
+.weather-kaimaktsalan .temp-low  { color: #93c5fd; }
+.weather-kaimaktsalan .temp-sep  { color: rgba(255,255,255,0.5); }
+
+.weather-kaimaktsalan .weather-snow-badge {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+.weather-kaimaktsalan .weather-loading,
+.weather-kaimaktsalan .weather-error {
+  color: #93c5fd;
+}
+
+/* ─── Map Page ─── */
+.map-page {
+  padding: 16px;
+  padding-bottom: 100px;
+}
+
+.map-container {
+  width: 100%;
+  height: 420px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow);
+}
+
+.map-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.map-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.map-legend-dot.green { background: #16a34a; }
+.map-legend-dot.blue  { background: #2563eb; }
+.map-legend-dot.red   { background: #dc2626; }
+
+.map-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.map-status.error { color: var(--red-500); }
+
+.map-missing-coords {
+  display: flex;
+  gap: 10px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #92400e;
+  margin-bottom: 14px;
+}
+
+[data-theme="dark"] .map-missing-coords {
+  background: #292524;
+  border-color: #78350f;
+  color: #fcd34d;
+}
+
+.map-missing-coords ul {
+  margin: 4px 0 0 16px;
+}
+
+.map-routes-list {
+  margin-top: 8px;
+}
+
+.map-route-card {
+  margin-bottom: 10px;
+}
+
+.map-route-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.map-route-from { color: var(--text-primary); }
+.map-route-arrow { color: var(--text-subtle); }
+.map-route-to   { color: var(--text-primary); }
+
+.map-route-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.map-route-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.map-route-gmaps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--brand-primary);
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.map-route-gmaps:hover { text-decoration: underline; }
+
+.map-no-hotels {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 40px 20px;
+}
+
 /* Responsive - ensure it works on tablets too */
 @media (min-width: 768px) {
   .app-container {
