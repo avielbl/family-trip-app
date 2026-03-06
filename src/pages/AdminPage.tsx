@@ -5,7 +5,7 @@ import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu,
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig, seedTripData, saveAIConfigToServer } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import type { FamilyMember } from '../types/trip';
 import type { AIConfig } from '../types/ai';
@@ -22,6 +22,8 @@ export default function AdminPage() {
   const [aiTestResult, setAiTestResult] = useState('');
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState('');
+  const [patchingWebsites, setPatchingWebsites] = useState(false);
+  const [patchWebsitesResult, setPatchWebsitesResult] = useState('');
   const [aiSaved, setAiSaved] = useState(false);
 
   const [members, setMembers] = useState<FamilyMember[]>(
@@ -318,6 +320,35 @@ export default function AdminPage() {
             color: seedResult.startsWith('✓') ? 'var(--green-600)' : 'var(--red-500)',
           }}>
             {seedResult}
+          </p>
+        )}
+        <button
+          className="admin-btn secondary"
+          style={{ marginTop: '8px' }}
+          onClick={async () => {
+            if (!tripCode) return;
+            setPatchingWebsites(true);
+            setPatchWebsitesResult('');
+            try {
+              const count = await patchHotelWebsites(tripCode);
+              setPatchWebsitesResult(isHe ? `✓ עודכנו ${count} מלונות עם קישורי אתר` : `✓ Patched ${count} hotels with website links`);
+            } catch (e) {
+              setPatchWebsitesResult(String(e));
+            } finally {
+              setPatchingWebsites(false);
+            }
+          }}
+          disabled={patchingWebsites}
+        >
+          {patchingWebsites ? <Loader size={14} className="spin" /> : <Database size={14} />}
+          {isHe ? 'הוסף קישורי אתרי מלון' : 'Patch Hotel Website Links'}
+        </button>
+        {patchWebsitesResult && (
+          <p style={{
+            marginTop: '8px', fontSize: '13px',
+            color: patchWebsitesResult.startsWith('✓') ? 'var(--green-600)' : 'var(--red-500)',
+          }}>
+            {patchWebsitesResult}
           </p>
         )}
       </div>

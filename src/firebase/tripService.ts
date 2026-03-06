@@ -3,6 +3,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   onSnapshot,
   updateDoc,
   writeBatch,
@@ -269,6 +270,33 @@ export async function deleteFlight(tripCode: string, id: string): Promise<void> 
 
 export async function deleteHotel(tripCode: string, id: string): Promise<void> {
   await deleteDoc(doc(db, 'trips', tripCode, 'hotels', id));
+}
+
+// Known hotel website URLs — patched in by name match
+const HOTEL_WEBSITES: Record<string, string> = {
+  'aranis': 'https://www.aranis.gr',
+  'domotel neve': 'https://www.domotel.gr/neve',
+  'domotel': 'https://www.domotel.gr/neve',
+  'thessaloniki center': 'https://www.booking.com/hotel/gr/tsimiski-126-thessaloniki.html',
+  'tsimiski': 'https://www.booking.com/hotel/gr/tsimiski-126-thessaloniki.html',
+};
+
+export async function patchHotelWebsites(tripCode: string): Promise<number> {
+  const snap = await getDocs(collection(db, 'trips', tripCode, 'hotels'));
+  let patched = 0;
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (data.website) continue; // already has a website
+    const nameLower = (data.name as string ?? '').toLowerCase();
+    for (const [key, url] of Object.entries(HOTEL_WEBSITES)) {
+      if (nameLower.includes(key)) {
+        await updateDoc(doc(db, 'trips', tripCode, 'hotels', d.id), { website: url });
+        patched++;
+        break;
+      }
+    }
+  }
+  return patched;
 }
 
 export async function deleteDrivingSegment(tripCode: string, id: string): Promise<void> {

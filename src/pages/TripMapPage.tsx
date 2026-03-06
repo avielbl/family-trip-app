@@ -240,6 +240,33 @@ export default function TripMapPage() {
 
       const allLatLngs: [number, number][] = [];
 
+      // ── Airport marker (SKG) ─────────────────────────────────────
+      const airportIcon = L.divIcon({
+        className: '',
+        html: `<div style="
+          background:#0f172a;color:#fbbf24;
+          border:2px solid #fbbf24;border-radius:8px;
+          width:36px;height:36px;display:flex;
+          align-items:center;justify-content:center;
+          font-size:18px;
+          box-shadow:0 2px 8px rgba(0,0,0,0.4);
+        ">✈</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+        popupAnchor: [0, -22],
+      });
+
+      L.marker([SKG_AIRPORT.lat, SKG_AIRPORT.lng], { icon: airportIcon })
+        .addTo(map)
+        .bindPopup(
+          `<div style="font-family:Inter,sans-serif;min-width:140px;">
+            <strong style="color:#0f172a">✈ Thessaloniki Airport</strong><br/>
+            <span style="font-size:12px;color:#6b7280">SKG — Makedonia Airport</span><br/>
+            <span style="font-size:11px;color:#6b7280">Arrival & Departure point</span>
+          </div>`
+        );
+      allLatLngs.push([SKG_AIRPORT.lat, SKG_AIRPORT.lng]);
+
       // ── Hotel markers (blue) ──────────────────────────────────────
       const hotelIcon = (index: number) =>
         L.divIcon({
@@ -441,6 +468,10 @@ export default function TripMapPage() {
               <span>{isRTL ? item.labelHe : item.label}</span>
             </div>
           ))}
+          <div className="legend-item">
+            <div style={{ background: '#0f172a', border: '2px solid #fbbf24', borderRadius: 6, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>✈</div>
+            <span>{isRTL ? 'שדה תעופה' : 'Airport'}</span>
+          </div>
           <div className="legend-item">
             <div style={{ width: 36, height: 4, background: '#1d4ed8', borderRadius: 2, opacity: 0.7, marginRight: 4 }} />
             <span>{isRTL ? 'מסלול נסיעה' : 'Driving route'}</span>

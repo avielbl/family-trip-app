@@ -507,7 +507,12 @@ body {
 .hotel-name {
   font-size: 18px;
   font-weight: 600;
-  color: var(--gray-900);
+  color: var(--text-primary);
+}
+
+.hotel-city {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .hotel-dates {
@@ -516,13 +521,55 @@ body {
   margin: 10px 0;
 }
 
+.hotel-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.date-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.date-value {
+  color: var(--text-secondary);
+}
+
+.detail-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.detail-value {
+  color: var(--text-secondary);
+}
+
 .hotel-detail {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: var(--gray-600);
+  color: var(--text-secondary);
   margin: 4px 0;
+}
+
+.hotel-notes {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.confirmation-code {
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--brand-primary);
 }
 
 .copy-btn {
