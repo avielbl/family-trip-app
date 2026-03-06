@@ -180,6 +180,15 @@ export default function WeatherPage() {
   const [skiForecast, setSkiForecast] = useState<SkiForecast | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Extra locations added via AI chat (stored in localStorage)
+  const [extraLocations] = useState<Array<{ city: string; lat?: number; lng?: number }>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('weatherExtraLocations') ?? '[]');
+    } catch {
+      return [];
+    }
+  });
+
   const tripStart = config ? parseISO(config.startDate) : parseISO('2026-03-24');
   const tripEnd = config ? parseISO(config.endDate) : parseISO('2026-04-04');
 
@@ -199,11 +208,23 @@ export default function WeatherPage() {
       .filter(Boolean) as { location: string; lat: number; lng: number; hotel: Hotel }[];
   }, [hotels]);
 
-  // If no hotels loaded yet (Firebase not connected), use Athens as default
+  // Merge hotel locations + chat-added extra locations (deduplicated by city)
   const locationsToFetch = useMemo(() => {
-    if (hotelLocations.length > 0) return hotelLocations;
-    return [{ location: 'Athens', lat: 37.9838, lng: 23.7275, hotel: null as unknown as Hotel }];
-  }, [hotelLocations]);
+    const base = hotelLocations.length > 0
+      ? hotelLocations
+      : [{ location: 'Athens', lat: 37.9838, lng: 23.7275, hotel: null as unknown as Hotel }];
+    const seen = new Set(base.map((l) => l.location.toLowerCase()));
+    const extras = extraLocations
+      .filter((e) => !seen.has(e.city.toLowerCase()))
+      .map((e) => {
+        const coords = e.lat && e.lng ? { lat: e.lat, lng: e.lng } : getCityCoords(e.city);
+        if (!coords) return null;
+        seen.add(e.city.toLowerCase());
+        return { location: e.city, lat: coords.lat, lng: coords.lng, hotel: null as unknown as Hotel };
+      })
+      .filter(Boolean) as typeof base;
+    return [...base, ...extras];
+  }, [hotelLocations, extraLocations]);
 
   // Find nearby ski resorts
   const nearbySkiResorts = useMemo(() => findNearbySkiResorts(hotels), [hotels]);

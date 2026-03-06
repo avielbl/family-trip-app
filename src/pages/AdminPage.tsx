@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import type { FamilyMember } from '../types/trip';
 import type { AIConfig } from '../types/ai';
@@ -20,6 +20,8 @@ export default function AdminPage() {
   const [aiConfig, setAiConfigState] = useState<AIConfig>(getAIConfig);
   const [aiTesting, setAiTesting] = useState(false);
   const [aiTestResult, setAiTestResult] = useState('');
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState('');
   const [aiSaved, setAiSaved] = useState(false);
 
   const [members, setMembers] = useState<FamilyMember[]>(
@@ -59,8 +61,15 @@ export default function AdminPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleSaveAI() {
+  async function handleSaveAI() {
     setAIConfig(aiConfig);
+    if (tripCode) {
+      try {
+        await saveAIConfigToServer(tripCode, aiConfig);
+      } catch (e) {
+        console.error('Failed to save AI config to server:', e);
+      }
+    }
     setAiSaved(true);
     setTimeout(() => setAiSaved(false), 2000);
   }
@@ -75,6 +84,30 @@ export default function AdminPage() {
       setAiTestResult(`${t('ai.testFail')}: ${e.message}`);
     } finally {
       setAiTesting(false);
+    }
+  }
+
+  async function handleSeedContent() {
+    if (!tripCode) return;
+    const confirmed = window.confirm(
+      isHe
+        ? 'זה יטען את כל תוכן הטיול: אטרקציות, מסעדות, מסלולי נסיעה, ימים ומלונות. הנתונים הקיימים עם אותם מזהים יוחלפו. להמשיך?'
+        : 'This will seed all trip content: highlights, restaurants, driving routes, days, and hotels. Existing docs with same IDs will be overwritten. Continue?'
+    );
+    if (!confirmed) return;
+    setSeeding(true);
+    setSeedResult('');
+    try {
+      const result = await seedTripData(tripCode);
+      setSeedResult(
+        isHe
+          ? `✓ נטען בהצלחה: ${result.highlights} אטרקציות, ${result.restaurants} מסעדות, ${result.driving} מסלולים, ${result.days} ימים + 3 מלונות`
+          : `✓ Seeded: ${result.highlights} highlights, ${result.restaurants} restaurants, ${result.driving} routes, ${result.days} days + 3 hotels`
+      );
+    } catch (e: any) {
+      setSeedResult(`✗ ${e.message}`);
+    } finally {
+      setSeeding(false);
     }
   }
 
@@ -255,6 +288,38 @@ export default function AdminPage() {
               : (isHe ? 'העתק קישור' : 'Copy Invite Link')}
           </button>
         </div>
+      </div>
+
+      {/* Seed Trip Content */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <Database size={16} />
+          {isHe ? 'טען תוכן טיול' : 'Seed Trip Content'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+          {isHe
+            ? 'טוען את כל האטרקציות, המסעדות, מסלולי הנסיעה, ימי הטיול ופרטי המלונות לפי תוכנית הטיול בפועל (יוון, מרץ-אפריל 2026).'
+            : 'Loads all highlights, restaurants, driving routes, trip days, and hotel details based on the actual trip plan (Greece, March–April 2026).'}
+        </p>
+        <button
+          className="admin-btn primary"
+          onClick={handleSeedContent}
+          disabled={seeding}
+        >
+          {seeding ? <Loader size={14} className="spin" /> : <Database size={14} />}
+          {seeding
+            ? (isHe ? 'טוען...' : 'Seeding...')
+            : (isHe ? 'טען תוכן טיול' : 'Seed Trip Content')}
+        </button>
+        {seedResult && (
+          <p style={{
+            marginTop: '8px',
+            fontSize: '13px',
+            color: seedResult.startsWith('✓') ? 'var(--green-600)' : 'var(--red-500)',
+          }}>
+            {seedResult}
+          </p>
+        )}
       </div>
 
       {/* Family Members */}

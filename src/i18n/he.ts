@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: 'טריפיט',
+    title: 'TripIt',
     subtitle: 'הרפתקה משפחתית',
   },
   nav: {

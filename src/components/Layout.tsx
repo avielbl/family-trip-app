@@ -21,10 +21,12 @@ import {
   CloudSun,
   Map,
   CalendarDays,
+  MessageCircle,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTripContext } from '../context/TripContext';
 import ToastNotifications from './ToastNotifications';
+import TripChatPanel from './TripChatPanel';
 
 const baseNavItems = [
   { path: '/', icon: Home, labelKey: 'nav.home' },
@@ -49,6 +51,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const isRTL = i18n.language === 'he';
   const { isAdmin } = useTripContext();
 
@@ -81,9 +84,7 @@ export default function Layout() {
         <button className="menu-btn" onClick={() => setMenuOpen(!menuOpen)}>
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <h1 className="top-title">
-          <img src="/logo.PNG" alt="TripIt" className="top-logo" />
-        </h1>
+        <h1 className="top-title">TripIt</h1>
         <button
           className="menu-btn"
           onClick={() => setDarkMode(!darkMode)}
@@ -129,6 +130,18 @@ export default function Layout() {
 
       {/* Notifications */}
       <ToastNotifications />
+
+      {/* AI Chat */}
+      <TripChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+
+      {/* Floating Chat Button */}
+      <button
+        className="chat-fab"
+        onClick={() => setChatOpen((o) => !o)}
+        aria-label="Open AI assistant"
+      >
+        {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
+      </button>
 
       {/* Main Content */}
       <main className="main-content">

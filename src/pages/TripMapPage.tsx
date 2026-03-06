@@ -7,9 +7,34 @@ import type { Hotel, Highlight, Restaurant } from '../types/trip';
 // ─── City coords fallback ─────────────────────────────────────────────────────
 
 const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+  // ── Actual trip: March–April 2026 ────────────────────────────────
+  'ioannina': { lat: 39.6650, lng: 20.8527 },
+  'yioannina': { lat: 39.6650, lng: 20.8527 },
+  'zagoria': { lat: 39.8900, lng: 20.7300 },
+  'zagori': { lat: 39.8900, lng: 20.7300 },
+  'kipi': { lat: 39.8640, lng: 20.7380 },
+  'kipoi': { lat: 39.8640, lng: 20.7380 },
+  'monodendri': { lat: 39.9040, lng: 20.7330 },
+  'papigo': { lat: 39.9880, lng: 20.7240 },
+  'voidomatis': { lat: 39.9050, lng: 20.7650 },
+  'vikos': { lat: 39.8985, lng: 20.7200 },
+  'metsovo': { lat: 39.7710, lng: 21.1830 },
+  'tsoumerka': { lat: 39.4720, lng: 21.0540 },
+  'kipina': { lat: 39.4720, lng: 21.0540 },
+  'pramenti': { lat: 39.5060, lng: 21.0730 },
+  'pertouli': { lat: 39.4730, lng: 21.4510 },
+  'palaios agios athanasios': { lat: 40.8810, lng: 22.1460 },
+  'palaios': { lat: 40.8810, lng: 22.1460 },
+  'pozar': { lat: 40.9670, lng: 22.0430 },
+  'loutraki': { lat: 40.9670, lng: 22.0430 },
+  'aridaia': { lat: 40.9750, lng: 22.0590 },
+  'edessa': { lat: 40.8005, lng: 22.0510 },
+  'thessaloniki': { lat: 40.6401, lng: 22.9444 },
+  'skg': { lat: 40.5196, lng: 22.9720 },
+  'imathia': { lat: 40.5300, lng: 22.1200 },
+  // ── Legacy / other Greek cities ──────────────────────────────────
   'athens': { lat: 37.9838, lng: 23.7275 },
   'athina': { lat: 37.9838, lng: 23.7275 },
-  'thessaloniki': { lat: 40.6401, lng: 22.9444 },
   'santorini': { lat: 36.3932, lng: 25.4615 },
   'thira': { lat: 36.3932, lng: 25.4615 },
   'mykonos': { lat: 37.4467, lng: 25.3289 },
@@ -28,8 +53,8 @@ const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'zakynthos': { lat: 37.7943, lng: 20.8956 },
 };
 
-function getCityCoords(city: string): { lat: number; lng: number } | null {
-  const key = city.toLowerCase().trim();
+function getCityCoords(text: string): { lat: number; lng: number } | null {
+  const key = text.toLowerCase().trim();
   for (const [name, coords] of Object.entries(CITY_COORDS)) {
     if (key.includes(name) || name.includes(key)) return coords;
   }
@@ -43,7 +68,15 @@ function getHotelCoords(hotel: Hotel): { lat: number; lng: number } | null {
 
 function getHighlightCoords(hl: Highlight): { lat: number; lng: number } | null {
   if (hl.lat && hl.lng) return { lat: hl.lat, lng: hl.lng };
-  if (hl.address) return getCityCoords(hl.address);
+  if (hl.address) {
+    const c = getCityCoords(hl.address);
+    if (c) return c;
+  }
+  if (hl.description) {
+    const c = getCityCoords(hl.description);
+    if (c) return c;
+  }
+  if (hl.name) return getCityCoords(hl.name);
   return null;
 }
 
@@ -148,9 +181,9 @@ export default function TripMapPage() {
     [restaurants]
   );
 
-  // Default center: center of Greece
-  const defaultCenter: [number, number] = [38.5, 23.0];
-  const defaultZoom = 6;
+  // Default center: Northern Greece (actual trip area)
+  const defaultCenter: [number, number] = [40.2, 21.8];
+  const defaultZoom = 7;
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -301,8 +334,15 @@ export default function TripMapPage() {
       });
 
       // ── Fit bounds to all markers ─────────────────────────────────
-      if (allLatLngs.length > 0) {
-        map.fitBounds(allLatLngs, { padding: [40, 40] });
+      if (allLatLngs.length === 0) {
+        // No data yet — show default Greece overview
+        map.setView(defaultCenter, defaultZoom);
+      } else if (allLatLngs.length === 1) {
+        // Single marker — use moderate zoom
+        map.setView(allLatLngs[0], 12);
+      } else {
+        // Multiple markers — fit all, cap zoom so we don't end up street-level
+        map.fitBounds(allLatLngs, { padding: [40, 40], maxZoom: 13 });
       }
     });
 
@@ -370,6 +410,19 @@ export default function TripMapPage() {
           </div>
         </div>
       </div>
+
+      {/* ─── Empty state notice ──────────────────────────────────── */}
+      {hotels.length === 0 && highlights.length === 0 && (
+        <div style={{
+          textAlign: 'center', padding: '20px 16px',
+          background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)',
+          color: 'var(--text-muted)', fontSize: '14px', margin: '12px 0',
+        }}>
+          {isRTL
+            ? 'אין נתונים עדיין — עבור לניהול → "טען תוכן טיול" כדי לאכלס את המפה'
+            : 'No data yet — go to Admin → "Seed Trip Content" to populate the map'}
+        </div>
+      )}
 
       {/* ─── Hotel List ──────────────────────────────────────────── */}
       {hotelPoints.length > 0 && (

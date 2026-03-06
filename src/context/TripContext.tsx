@@ -31,7 +31,9 @@ import {
   subscribeEarnedStamps,
   getTripConfig,
   joinTrip,
+  loadAIConfigFromServer,
 } from '../firebase/tripService';
+import { setAIConfig } from '../firebase/aiService';
 import { useAuthContext } from './AuthContext';
 
 interface TripContextType {
@@ -163,6 +165,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       setError(err.message);
       setLoading(false);
     });
+
+    // Load AI config from server and sync to localStorage so all users can use AI features
+    loadAIConfigFromServer(tripCode).then((serverConfig) => {
+      if (serverConfig?.apiKey) {
+        setAIConfig(serverConfig);
+      }
+    }).catch(() => {/* silently ignore — AI config is optional */});
 
     unsubs.push(subscribeTripDays(tripCode, setDays));
     unsubs.push(subscribeFlights(tripCode, setFlights));

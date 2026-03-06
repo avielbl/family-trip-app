@@ -29,12 +29,17 @@ function AppRoutes() {
     return (
       <div style={{
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         height: '100vh',
-        fontSize: '48px',
+        background: '#152759',
+        gap: '16px',
       }}>
-        🇬🇷
+        <img src="/logo.PNG" alt="TripIt" style={{ height: '80px', borderRadius: '12px' }} />
+        <div style={{ color: '#f97316', fontSize: '14px', letterSpacing: '2px', fontFamily: 'Inter, sans-serif' }}>
+          LOADING...
+        </div>
       </div>
     );
   }
