@@ -63,11 +63,11 @@ const GREEK_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
 // ─── Greek Ski Resorts ────────────────────────────────────────────────────────
 
 const GREEK_SKI_RESORTS = [
-  { name: 'Parnassos Ski Center', nameHe: 'מרכז סקי פרנסוס', lat: 38.5247, lng: 22.6267, nearCity: 'Arachova/Delphi' },
-  { name: 'Vasilitsa Ski Resort', nameHe: 'אתר סקי וסיליצה', lat: 40.0183, lng: 21.3417, nearCity: 'Grevena' },
+  { name: 'Kaimaktsalan Ski Resort', nameHe: 'אתר סקי קיימקצלן', lat: 40.8395, lng: 21.7780, nearCity: 'Edessa/Aridaia' },
   { name: 'Seli Ski Resort', nameHe: 'אתר סקי סלי', lat: 40.2167, lng: 22.1833, nearCity: 'Veroia' },
-  { name: 'Falakro Ski Resort', nameHe: 'אתר סקי פלקרו', lat: 41.2700, lng: 24.0700, nearCity: 'Drama' },
+  { name: 'Vasilitsa Ski Resort', nameHe: 'אתר סקי וסיליצה', lat: 40.0183, lng: 21.3417, nearCity: 'Grevena' },
   { name: '3-5 Pigadia Ski Resort', nameHe: 'אתר סקי 3-5 פיגדיה', lat: 40.3167, lng: 21.9000, nearCity: 'Naoussa' },
+  { name: 'Falakro Ski Resort', nameHe: 'אתר סקי פלקרו', lat: 41.2700, lng: 24.0700, nearCity: 'Drama' },
 ];
 
 // Distance between two lat/lng in km (Haversine)
@@ -99,8 +99,8 @@ function findNearbySkiResorts(hotels: Hotel[]) {
       }
     }
   }
-  // Always show Parnassos (most relevant for Athens-area Greece trips)
-  if (!nearby.find((r) => r.name === 'Parnassos Ski Center')) {
+  // Always show Kaimaktsalan (closest to the actual trip: Palaios Agios Athanasios / Edessa)
+  if (!nearby.find((r) => r.name === 'Kaimaktsalan Ski Resort')) {
     nearby.push(GREEK_SKI_RESORTS[0]);
   }
   return nearby;
@@ -339,8 +339,8 @@ export default function WeatherPage() {
           </div>
           <p className="ski-note">
             {isRTL
-              ? 'הר פרנסוס הוא אתר הסקי הפופולרי ביותר ליד אזור אתונה ודלפי. תחזית שלג לתאריכי הטיול:'
-              : 'Mt. Parnassos hosts Greece\'s most popular ski resort near Athens & Delphi. Snow forecast for trip dates:'}
+              ? 'קיימקצלן (הר ווראס) הוא אתר הסקי הקרוב ביותר לאזור הטיול — ליד אדסה ופלאיוס אגיוס אתנאסיוס. תחזית שלג:'
+              : 'Kaimaktsalan (Mt. Voras) is the ski resort closest to the trip — near Edessa & Palaios Agios Athanasios. Snow forecast:'}
           </p>
 
           {skiForecast.error ? (

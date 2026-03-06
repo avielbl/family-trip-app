@@ -11,6 +11,7 @@ import {
   Check,
   Hash,
   FileText,
+  Globe,
   Plus,
   Pencil,
   Trash2,
@@ -235,6 +236,19 @@ const HotelsPage: React.FC = () => {
                 </div>
               )}
 
+              {hotel.website && (
+                <a
+                  href={hotel.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hotel-website-btn"
+                >
+                  <Globe size={14} />
+                  <span>{isHe ? 'אתר המלון' : 'Hotel Website'}</span>
+                  <ExternalLink size={12} />
+                </a>
+              )}
+
               <a
                 href={getNavigationUrl(hotel)}
                 target="_blank"
@@ -298,6 +312,7 @@ function HotelModal({ hotel, isHe, onSave, onClose, t }: {
           ['confirmationCode', isHe ? 'קוד אישור' : 'Confirmation Code'],
           ['wifiPassword', isHe ? 'סיסמת WiFi' : 'WiFi Password'],
           ['phone', isHe ? 'טלפון' : 'Phone'],
+          ['website', isHe ? 'אתר אינטרנט' : 'Website URL'],
           ['notes', isHe ? 'הערות' : 'Notes'],
         ] as [keyof Hotel, string][]).map(([field, label]) => (
           <div className="form-group" key={field}>

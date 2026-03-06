@@ -810,7 +810,7 @@ export async function seedTripData(tripCode: string): Promise<{ highlights: numb
       id: 'drv-skg-ioannina',
       dayIndex: 0,
       from: 'Thessaloniki Airport (SKG)',
-      to: 'Selin Luxury Residences, Ioannina',
+      to: 'Aranis Hotel, Ioannina',
       distanceKm: 310,
       durationMinutes: 210,
       notes: 'Via Metsovo (Egnatia Odos). Stop in Metsovo for lunch and cheese shopping.',
@@ -818,7 +818,7 @@ export async function seedTripData(tripCode: string): Promise<{ highlights: numb
     {
       id: 'drv-ioannina-palaios',
       dayIndex: 5,
-      from: 'Selin Luxury Residences, Ioannina',
+      from: 'Aranis Hotel, Ioannina',
       to: 'Palaios Agios Athanasios',
       distanceKm: 280,
       durationMinutes: 180,
@@ -860,26 +860,28 @@ export async function seedTripData(tripCode: string): Promise<{ highlights: numb
   ];
 
   const hotel1: Hotel = {
-    id: 'hotel-selin-ioannina',
+    id: 'hotel-aranis-ioannina',
     dayIndexStart: 0,
     dayIndexEnd: 4,
-    name: 'Selin Luxury Residences',
+    name: 'Aranis',
     address: 'Ioannina, Epirus',
     city: 'Ioannina',
     checkIn: '2026-03-24T15:00:00',
     checkOut: '2026-03-29T11:00:00',
+    website: 'https://www.aranis.gr',
     lat: 39.6650, lng: 20.8550,
   };
 
   const hotel2: Hotel = {
-    id: 'hotel-palaios-boutique',
+    id: 'hotel-domotel-neve',
     dayIndexStart: 5,
     dayIndexEnd: 6,
-    name: 'Palaios Agios Athanasios Guesthouse',
+    name: 'Domotel Neve',
     address: 'Palaios Agios Athanasios, Imathia',
     city: 'Palaios Agios Athanasios',
     checkIn: '2026-03-29T15:00:00',
     checkOut: '2026-03-31T11:00:00',
+    website: 'https://www.domotel.gr/neve',
     lat: 40.8810, lng: 22.1460,
   };
 
@@ -892,6 +894,7 @@ export async function seedTripData(tripCode: string): Promise<{ highlights: numb
     city: 'Thessaloniki',
     checkIn: '2026-03-31T15:00:00',
     checkOut: '2026-04-04T11:00:00',
+    website: 'https://www.booking.com/hotel/gr/tsimiski-126-thessaloniki.html',
     lat: 40.6341, lng: 22.9440,
   };
 

@@ -7,6 +7,41 @@ import { saveFlight, deleteFlight } from '../firebase/tripService';
 import type { Flight } from '../types/trip';
 import AIImportModal from '../components/AIImportModal';
 
+// ─── Airline online check-in URLs ────────────────────────────────────────────
+
+const CHECKIN_URLS: Record<string, string> = {
+  'aegean': 'https://en.aegeanair.com/travel-information/online-check-in/',
+  'olympic': 'https://en.aegeanair.com/travel-information/online-check-in/',
+  'easyjet': 'https://www.easyjet.com/en/check-in',
+  'ryanair': 'https://www.ryanair.com/en/check-in',
+  'wizz': 'https://wizzair.com/en-gb/check-in',
+  'wizzair': 'https://wizzair.com/en-gb/check-in',
+  'lufthansa': 'https://www.lufthansa.com/de/en/myhansafly',
+  'british airways': 'https://www.britishairways.com/en-gb/information/online-check-in',
+  'klm': 'https://www.klm.com/en/information/check-in',
+  'air france': 'https://www.airfrance.com/en/check-in',
+  'turkish': 'https://www.turkishairlines.com/en-int/flights/manage-booking/',
+  'emirates': 'https://www.emirates.com/english/manage-booking/',
+  'transavia': 'https://www.transavia.com/en-EU/check-in/',
+  'israir': 'https://www.israir.co.il/en/check-in/',
+  'arkia': 'https://www.arkia.com/en/online-check-in/',
+  'elal': 'https://www.elal.com/en/Passengers/online-check-in/',
+  'el al': 'https://www.elal.com/en/Passengers/online-check-in/',
+};
+
+function getCheckInUrl(airline: string): string | null {
+  const key = airline.toLowerCase();
+  for (const [name, url] of Object.entries(CHECKIN_URLS)) {
+    if (key.includes(name)) return url;
+  }
+  return null;
+}
+
+function getTrackingUrl(flightNumber: string): string {
+  const num = flightNumber.replace(/\s+/g, '').toUpperCase();
+  return `https://www.flightaware.com/live/flight/${num}`;
+}
+
 function emptyFlight(): Flight {
   return {
     id: `flight-${Date.now()}`,
@@ -189,6 +224,33 @@ const FlightsPage: React.FC = () => {
                 <span>{t('flights.boardingPass')}</span>
               </a>
             )}
+
+            <div className="flight-action-links">
+              {getCheckInUrl(flight.airline) && (
+                <a
+                  href={getCheckInUrl(flight.airline)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flight-action-link checkin-link"
+                >
+                  <Plane size={13} />
+                  <span>{isHe ? 'צ\'ק-אין אונליין' : 'Online Check-in'}</span>
+                  <ExternalLink size={11} />
+                </a>
+              )}
+              {flight.flightNumber && (
+                <a
+                  href={getTrackingUrl(flight.flightNumber)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flight-action-link track-link"
+                >
+                  <MapPin size={13} />
+                  <span>{isHe ? 'עקוב אחר הטיסה' : 'Track Flight'}</span>
+                  <ExternalLink size={11} />
+                </a>
+              )}
+            </div>
 
             {isAdmin && (
               <div className="admin-controls">

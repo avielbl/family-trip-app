@@ -81,6 +81,7 @@ export interface Hotel {
   email?: string;
   wifiPassword?: string;
   mapUrl?: string;
+  website?: string;
   lat?: number;
   lng?: number;
   notes?: string;

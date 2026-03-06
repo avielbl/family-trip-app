@@ -101,6 +101,26 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: '#6b7280',
 };
 
+// ─── SKG Airport (start/end point of driving route) ──────────────────────────
+
+const SKG_AIRPORT = { lat: 40.5196, lng: 22.9720 };
+
+// ─── OSRM real-road routing ───────────────────────────────────────────────────
+
+async function fetchOSRMRoute(
+  waypoints: Array<{ lat: number; lng: number }>
+): Promise<[number, number][]> {
+  if (waypoints.length < 2) return [];
+  const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?geometries=geojson&overview=full`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OSRM ${res.status}`);
+  const data = await res.json();
+  const geometry: [number, number][] = data.routes[0].geometry.coordinates;
+  // OSRM returns [lng, lat] — flip to [lat, lng] for Leaflet
+  return geometry.map(([lng, lat]) => [lat, lng]);
+}
+
 // ─── Tile layers ──────────────────────────────────────────────────────────────
 
 const TILE_LAYERS = {
@@ -258,15 +278,32 @@ export default function TripMapPage() {
           );
       });
 
-      // ── Route polyline between hotels ──────────────────────────────
-      if (hotelPoints.length > 1) {
-        const routeLatLngs = hotelPoints.map((pt) => [pt.lat, pt.lng] as [number, number]);
-        L.polyline(routeLatLngs, {
-          color: '#1d4ed8',
-          weight: 3,
-          opacity: 0.7,
-          dashArray: '8, 6',
-        }).addTo(map);
+      // ── Route polyline: OSRM real roads (SKG → hotels → SKG) ────────
+      if (hotelPoints.length > 0) {
+        const routeWaypoints = [
+          SKG_AIRPORT,
+          ...hotelPoints.map((pt) => ({ lat: pt.lat, lng: pt.lng })),
+          SKG_AIRPORT,
+        ];
+        // Draw dashed fallback immediately, replace with OSRM geometry when ready
+        const fallbackLine = L.polyline(
+          routeWaypoints.map((w) => [w.lat, w.lng] as [number, number]),
+          { color: '#1d4ed8', weight: 2, opacity: 0.4, dashArray: '8, 6' }
+        ).addTo(map);
+
+        fetchOSRMRoute(routeWaypoints)
+          .then((latLngs) => {
+            if (!mapRef.current) return;
+            fallbackLine.remove();
+            L.polyline(latLngs, {
+              color: '#1d4ed8',
+              weight: 3,
+              opacity: 0.8,
+            }).addTo(mapRef.current);
+          })
+          .catch(() => {
+            // Keep fallback dashed line if OSRM fails
+          });
       }
 
       // ── Highlight markers (colored circles) ───────────────────────

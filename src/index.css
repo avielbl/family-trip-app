@@ -455,6 +455,45 @@ body {
   gap: 12px;
 }
 
+.flight-action-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.flight-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+  flex: 1;
+  justify-content: center;
+}
+
+.checkin-link {
+  background: var(--blue-500);
+  color: white;
+}
+
+.checkin-link:hover {
+  background: var(--blue-600);
+}
+
+.track-link {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.track-link:hover {
+  background: var(--bg-tertiary);
+}
+
 /* Hotel Cards */
 .hotel-card {
   border-left: 4px solid var(--blue-500);
@@ -554,6 +593,48 @@ body {
   font-size: 13px;
   font-family: inherit;
   text-decoration: none;
+}
+
+.navigate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--blue-500);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  text-decoration: none;
+  width: 100%;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.navigate-btn:hover {
+  background: var(--blue-600);
+}
+
+.hotel-website-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  color: var(--brand-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 13px;
+  width: 100%;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.hotel-website-btn:hover {
+  background: var(--bg-tertiary);
 }
 
 /* Highlights */
@@ -1069,7 +1150,7 @@ body {
 }
 
 .quiz-option {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border: 2px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
@@ -1079,11 +1160,42 @@ body {
   font-family: inherit;
   color: var(--text-secondary);
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.option-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--brand-primary);
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.option-text {
+  flex: 1;
+  line-height: 1.4;
+}
+.option-icon {
+  flex-shrink: 0;
+  margin-inline-start: auto;
 }
 
 .quiz-option:hover {
   border-color: var(--blue-300);
   background: var(--brand-light);
+}
+.quiz-option:hover .option-letter {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
 }
 
 .quiz-option.quiz-option-correct {
@@ -1091,11 +1203,21 @@ body {
   background: #f0fdf4;
   color: var(--green-600);
 }
+.quiz-option-correct .option-letter {
+  background: var(--green-500);
+  border-color: var(--green-500);
+  color: #fff;
+}
 
 .quiz-option.quiz-option-wrong {
   border-color: var(--red-500);
   background: #fef2f2;
   color: var(--red-500);
+}
+.quiz-option-wrong .option-letter {
+  background: var(--red-500);
+  border-color: var(--red-500);
+  color: #fff;
 }
 
 .quiz-option.quiz-option-disabled {
@@ -2540,7 +2662,7 @@ body {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 1000;
+  z-index: 10;
   display: inline-flex;
   align-items: center;
   gap: 5px;
