@@ -9,7 +9,14 @@ import {
 } from '../firebase/authService';
 import type { UserProfile, FamilyMember } from '../types/trip';
 
-const ADMIN_EMAIL = 'avielbl@gmail.com';
+// Bootstrap admin email — legacy fallback used until family adminUids are
+// stamped everywhere (see docs/MULTI_TRIP_PLAN.md phase 7).
+export const ADMIN_EMAIL = 'avielbl@gmail.com';
+
+// eslint-disable-next-line react-refresh/only-export-components -- shared auth helper, not a component
+export function isBootstrapAdminEmail(email?: string | null): boolean {
+  return !!email && email === ADMIN_EMAIL;
+}
 
 interface AuthContextType {
   firebaseUser: FirebaseUser | null;
@@ -25,6 +32,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// eslint-disable-next-line react-refresh/only-export-components -- idiomatic context hook export
 export function useAuthContext() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuthContext must be used within AuthProvider');
