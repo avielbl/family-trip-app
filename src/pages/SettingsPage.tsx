@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, Globe, User, Info, Calendar, LogOut, Link, Copy, Check } from 'lucide-react';
+import { Settings, Globe, User, Info, Calendar, LogOut, Link, Copy, Check, Sparkles } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
+import { AI_MODELS, getAiSettings, saveAiSettings, setAiProvider } from '../ai';
+import type { AiProviderId, AiSettings } from '../ai';
 
 const SettingsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { config, currentMember, setCurrentMember, tripCode, isAdmin } = useTripContext();
   const { firebaseUser, signOutUser } = useAuthContext();
   const [copied, setCopied] = useState(false);
+  const [aiSettings, setAiSettings] = useState<AiSettings>(() => getAiSettings());
 
   const currentLang = i18n.language;
   const isHe = currentLang === 'he';
@@ -27,6 +30,17 @@ const SettingsPage: React.FC = () => {
     await navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleAiProviderChange(provider: AiProviderId) {
+    if (provider === aiSettings.provider) return;
+    setAiSettings(setAiProvider(provider));
+  }
+
+  function handleAiChange(patch: Partial<AiSettings>) {
+    const next = { ...aiSettings, ...patch };
+    saveAiSettings(next);
+    setAiSettings(next);
   }
 
   return (
@@ -144,6 +158,62 @@ const SettingsPage: React.FC = () => {
                 : (isHe ? 'העתק קישור' : 'Copy Link')}
             </button>
           </div>
+        </section>
+      )}
+
+      {/* AI Assistant — admin only */}
+      {isAdmin && (
+        <section className="settings-section">
+          <label className="settings-label">
+            <Sparkles size={18} style={{ display: 'inline', marginInlineEnd: '6px' }} />
+            {isHe ? 'עוזר AI' : 'AI Assistant'}
+          </label>
+          <div className="lang-toggle" style={{ marginBottom: '10px' }}>
+            <button
+              className={aiSettings.provider === 'anthropic' ? 'active' : ''}
+              onClick={() => handleAiProviderChange('anthropic')}
+            >
+              Claude
+            </button>
+            <button
+              className={aiSettings.provider === 'gemini' ? 'active' : ''}
+              onClick={() => handleAiProviderChange('gemini')}
+            >
+              Gemini
+            </button>
+          </div>
+          <label className="settings-label" style={{ fontSize: '13px' }}>
+            {isHe ? 'מודל' : 'Model'}
+            <input
+              type="text"
+              className="setup-input"
+              list="ai-model-suggestions"
+              value={aiSettings.model}
+              onChange={(e) => handleAiChange({ model: e.target.value })}
+              style={{ marginBottom: '8px' }}
+            />
+          </label>
+          <datalist id="ai-model-suggestions">
+            {AI_MODELS[aiSettings.provider].suggestions.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+          <label className="settings-label" style={{ fontSize: '13px' }}>
+            {isHe ? 'מפתח API' : 'API Key'}
+            <input
+              type="password"
+              className="setup-input"
+              placeholder={aiSettings.provider === 'anthropic' ? 'sk-ant-...' : 'AIza...'}
+              value={aiSettings.apiKey}
+              onChange={(e) => handleAiChange({ apiKey: e.target.value })}
+              style={{ marginBottom: '8px' }}
+            />
+          </label>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+            {isHe
+              ? 'מפתחות Claude ב-console.anthropic.com · מפתחות Gemini ב-aistudio.google.com'
+              : 'Claude keys at console.anthropic.com · Gemini keys at aistudio.google.com'}
+          </p>
         </section>
       )}
 
