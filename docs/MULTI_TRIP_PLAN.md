@@ -252,12 +252,110 @@ Lazy, client-side, idempotent — no script needed:
 - [ ] Quiz questions from Firestore + admin editor + Greece seed.
 - [ ] Travel-log & restaurant-map destination interpolation.
 
-### Phase 6 — Polish & hardening
+### Phase 6 — AI provider abstraction (multi-model support)
+
+Today the app calls the Anthropic Messages API directly from the browser in two
+places, with duplicated fetch code:
+
+- `SetupPage.tsx:119` — booking-confirmation parsing (images → JSON). **Pinned
+  to `claude-sonnet-4-20250514`, a deprecated model past its announced
+  retirement date — this call is at risk of breaking regardless of any other
+  change and must be updated first.**
+- `TravelLogPage.tsx:64` — travel-log entry generation (uses `claude-sonnet-4-6`).
+
+Planned quiz-question generation (Phase 5) adds a third call site — the right
+moment to introduce an abstraction.
+
+**Design: `src/ai/` provider layer**
+
+```
+src/ai/
+  types.ts        // AiProvider interface: parseBookings(images, tripCtx),
+                  // generateTravelLog(prompt), generateQuiz(destination, days)
+  anthropic.ts    // Claude implementation
+  gemini.ts       // Google Gemini implementation (REST generateContent API)
+  index.ts        // getProvider(settings) factory
+```
+
+- All three tasks are the same shape (multimodal input → text/JSON out), so one
+  small interface covers them; each implementation is ~80 lines of fetch code.
+- **Settings UI**: provider picker (Claude / Gemini) + per-provider API key +
+  model dropdown, stored per device (localStorage, as today). Admin-only section.
+- JSON extraction should use each provider's native structured-output support
+  where available; keep the manual-edit textarea as the fallback.
+
+**Pricing snapshot (July 2026)** — the app's calls are small (a few images +
+~4K output), so absolute costs are cents either way; this mostly informs the
+default choice:
+
+| Model | Input $/1M | Output $/1M | Notes |
+|---|---|---|---|
+| Claude Haiku 4.5 | $1.00 | $5.00 | Cheapest Claude; fine for log/quiz text |
+| Gemini 3.5 Flash-Lite | $0.30 | $2.50 | Cheapest overall |
+| Gemini 3.6 Flash | $1.50 | $7.50 | Good vision; ticket parsing |
+| Gemini 3.1 Pro | $2.00 | $12.00 | |
+| Claude Sonnet 5 | $3.00 ($2 intro to 2026-08-31) | $15.00 ($10 intro) | Best extraction quality |
+| Claude Opus 5 | $5.00 | $25.00 | Overkill here |
+
+Recommended defaults: ticket parsing → Claude Sonnet 5 or Gemini 3.6 Flash
+(vision quality matters most here); travel log & quiz → Claude Haiku 4.5 or
+Gemini 3.5 Flash-Lite. Note Gemini "Flash" is not automatically cheaper than
+every Claude option — Haiku 4.5 undercuts Gemini 3.6 Flash; the real savings
+are in the Flash-Lite tier.
+
+**Security note (should be part of this phase):** API keys currently live in
+localStorage and calls go browser-direct (`anthropic-dangerous-direct-browser-access`).
+The cleaner long-term shape is a **Firebase Cloud Function** (`parseBookings`,
+`generateContent`) holding the keys server-side, callable only by trip admins.
+This also makes provider switching invisible to clients and removes the
+key-entry step from the wizard. Recommended, but can ship after the client-side
+abstraction if we want to keep the no-backend simplicity for now.
+
+- [ ] Replace deprecated `claude-sonnet-4-20250514` in SetupPage with `claude-sonnet-5` (do immediately, independent of the rest)
+- [ ] Extract `src/ai/` provider interface; move both existing call sites onto it
+- [ ] Add Gemini implementation + provider/model/key settings UI
+- [ ] (Recommended) Move AI calls into a Cloud Function with server-held keys
+
+### Phase 7 — Polish & hardening
 - [ ] Remove `ADMIN_EMAIL` bootstrap once family admins are stamped.
 - [ ] Empty states (family with zero trips), delete-draft-trip flow.
 - [ ] QA pass: two concurrent trips, switch active mid-use on two devices, archived-trip browsing, fresh-device join link, PWA offline behavior after switching.
 
-**Suggested order of PRs:** Phase 1+2 together (invisible foundation), then 3, then 4, then 5, then 6. Each phase leaves the app fully working for the current Greece trip.
+**Suggested order of PRs:** Phase 1+2 together (invisible foundation), then 3, then 4, then 5, then 6, then 7. Each phase leaves the app fully working for the current Greece trip. (The deprecated-model fix at the top of Phase 6 should ship immediately, ahead of everything else.)
+
+---
+
+## Known bug: "regenerate routes — hotels changed" notification on every open
+
+**Finding: this notification does not come from this repository.** A full-text
+search of the working tree *and every commit in git history* finds no
+"regenerate", "routes changed", or hotels-changed notification code (English or
+Hebrew), no toast/banner component, and no logic comparing hotels against
+driving segments. `DrivingPage` renders static segments; the PWA is configured
+with `registerType: 'autoUpdate'` (silent updates, no prompt).
+
+Most likely explanations, in order:
+
+1. **The deployed build differs from this repo** — uncommitted local code (or a
+   different branch) was deployed to Firebase Hosting. If that code has a
+   "hotels changed since routes were generated" check, the classic bug that
+   makes it fire on every open is treating the *initial* Firestore
+   `onSnapshot` emission as a change: with offline persistence enabled
+   (`firebase/config.ts`), every app open delivers a cached snapshot followed
+   by a server snapshot, and `docChanges()` on the first emission lists every
+   hotel as "added". A staleness flag persisted in localStorage that is set on
+   any snapshot and never cleared would behave exactly as described —
+   "hotels changed" months after the last real edit.
+2. **The notification belongs to another app entirely** (e.g. Google Maps
+   suggesting route updates) and coincides with opening this one.
+
+**To resolve:** capture the exact notification text/screenshot and check
+whether the deployed bundle contains it
+(`curl -s https://<app-host>/assets/index-*.js | grep -o 'regenerate[^"]*'`).
+If it's in the deployed bundle, the deployed code isn't in this repo — recover
+it from the deploying machine, commit it, and apply the first-snapshot fix
+(ignore `docChanges()` on the initial emission, or compare a stored
+`hotelsUpdatedAt` timestamp rather than snapshot deltas).
 
 ---
 
