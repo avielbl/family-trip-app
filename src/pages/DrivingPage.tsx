@@ -190,8 +190,8 @@ const DrivingPage: React.FC = () => {
             { key: 'durationMinutes', label: isHe ? 'משך (דקות)' : 'Duration (min)' },
             { key: 'notes', label: isHe ? 'הערות' : 'Notes' },
           ]}
-          data={editSeg as any}
-          onSave={(d) => handleSaveSeg(d as DrivingSegment)}
+          data={editSeg}
+          onSave={(d) => handleSaveSeg(d)}
           onClose={() => setEditSeg(null)}
           t={t}
         />
@@ -210,8 +210,8 @@ const DrivingPage: React.FC = () => {
             { key: 'phone', label: isHe ? 'טלפון' : 'Phone' },
             { key: 'notes', label: isHe ? 'הערות' : 'Notes' },
           ]}
-          data={editCar as any}
-          onSave={(d) => handleSaveCar(d as RentalCar)}
+          data={editCar}
+          onSave={(d) => handleSaveCar(d)}
           onClose={() => setEditCar(null)}
           t={t}
         />
@@ -220,15 +220,15 @@ const DrivingPage: React.FC = () => {
   );
 };
 
-function SimpleModal({ title, fields, data, onSave, onClose, t }: {
+function SimpleModal<T extends object>({ title, fields, data, onSave, onClose, t }: {
   title: string;
   fields: { key: string; label: string }[];
-  data: Record<string, any>;
-  onSave: (d: Record<string, any>) => void;
+  data: T;
+  onSave: (d: T) => void;
   onClose: () => void;
   t: (k: string) => string;
 }) {
-  const [form, setForm] = useState({ ...data });
+  const [form, setForm] = useState<T>({ ...data });
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -236,7 +236,11 @@ function SimpleModal({ title, fields, data, onSave, onClose, t }: {
         {fields.map(({ key, label }) => (
           <div className="form-group" key={key}>
             <label className="form-label">{label}</label>
-            <input className="form-input" value={form[key] ?? ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+            <input
+              className="form-input"
+              value={String((form as Record<string, unknown>)[key] ?? '')}
+              onChange={(e) => setForm({ ...form, [key]: e.target.value } as T)}
+            />
           </div>
         ))}
         <div className="modal-actions">

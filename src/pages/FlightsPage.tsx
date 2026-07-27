@@ -217,7 +217,7 @@ function FlightModal({ flight, isHe, onSave, onClose, t }: {
         ] as [keyof Flight, string][]).map(([field, label]) => (
           <div className="form-group" key={field}>
             <label className="form-label">{label}</label>
-            <input className="form-input" value={(form as any)[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
+            <input className="form-input" value={form[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
           </div>
         ))}
         <div className="modal-actions">
