@@ -23,6 +23,7 @@ export interface Family {
   name: string;
   adminUids: string[];
   memberTemplates: FamilyMember[]; // prefill source for new trips
+  memberEmails?: string[]; // denormalized (lowercased) for sign-in recovery lookup
   tripCodes: string[]; // newest first
   activeTripCode: string | null;
   createdAt: string;

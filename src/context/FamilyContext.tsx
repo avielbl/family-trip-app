@@ -12,6 +12,8 @@ import type { Family, TripConfig, TripSummary } from '../types/trip';
 import {
   subscribeFamily,
   createFamily,
+  findFamilyForUser,
+  backfillMemberEmails,
   setFamilyActiveTrip,
   addTripToFamily,
   setTripStatus,
@@ -78,6 +80,11 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     let pollTimer: ReturnType<typeof setInterval> | undefined;
 
+    // Re-resolving (e.g. right after sign-in) counts as loading so the UI can
+    // show a "restoring your trips" state instead of the setup screen.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- gate re-resolution
+    setFamilyLoading(true);
+
     const finish = () => {
       if (!cancelled) setFamilyLoading(false);
     };
@@ -107,6 +114,18 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       // 3. Legacy single-trip pointer
       const legacyCode = localStorage.getItem('tripCode');
       if (!legacyCode) {
+        // 3b. Sign-in recovery (e.g. after clearing app data): look the
+        // family up server-side by admin uid or member email.
+        if (firebaseUser) {
+          try {
+            const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email);
+            if (!cancelled && found) {
+              adoptFamilyId(found.id);
+            }
+          } catch (err) {
+            console.warn('Family recovery lookup failed:', err);
+          }
+        }
         finish();
         return;
       }
@@ -185,6 +204,16 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     const unsub = subscribeFamily(familyId, setFamily);
     return unsub;
   }, [familyId]);
+
+  // Backfill memberEmails on families created before it was denormalized —
+  // only an admin device can write the family doc.
+  useEffect(() => {
+    if (!family || family.memberEmails !== undefined) return;
+    if (!firebaseUser || !family.adminUids?.includes(firebaseUser.uid)) return;
+    backfillMemberEmails(family).catch((err) => {
+      console.warn('memberEmails backfill failed:', err);
+    });
+  }, [family, firebaseUser]);
 
   // Trip summaries, reloaded whenever the family's trip list changes
   const tripCodesKey = useMemo(

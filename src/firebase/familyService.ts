@@ -3,6 +3,10 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
+  query,
+  where,
+  limit,
   updateDoc,
   onSnapshot,
   arrayUnion,
@@ -26,6 +30,18 @@ export function subscribeFamily(
   });
 }
 
+// Lowercased member emails, denormalized onto the family doc so a signed-in
+// user can find their family again after clearing local data.
+function extractMemberEmails(members: FamilyMember[]): string[] {
+  return [
+    ...new Set(
+      members
+        .map((m) => m.email?.trim().toLowerCase())
+        .filter((e): e is string => !!e)
+    ),
+  ];
+}
+
 export async function createFamily(data: {
   name: string;
   adminUids: string[];
@@ -39,12 +55,40 @@ export async function createFamily(data: {
     name: data.name,
     adminUids: data.adminUids,
     memberTemplates: data.memberTemplates,
+    memberEmails: extractMemberEmails(data.memberTemplates),
     tripCodes: data.tripCodes ?? [],
     activeTripCode: data.activeTripCode ?? null,
     createdAt: new Date().toISOString(),
   };
   await setDoc(ref, family);
   return family;
+}
+
+/**
+ * Sign-in recovery: find the family a user belongs to when no local pointer
+ * and no profile familyId exist — by admin uid first, then by member email.
+ */
+export async function findFamilyForUser(
+  uid: string,
+  email: string | null | undefined
+): Promise<Family | null> {
+  const byAdmin = await getDocs(
+    query(collection(db, 'families'), where('adminUids', 'array-contains', uid), limit(1))
+  );
+  if (!byAdmin.empty) return byAdmin.docs[0].data() as Family;
+
+  const normalized = email?.trim().toLowerCase();
+  if (normalized) {
+    const byEmail = await getDocs(
+      query(
+        collection(db, 'families'),
+        where('memberEmails', 'array-contains', normalized),
+        limit(1)
+      )
+    );
+    if (!byEmail.empty) return byEmail.docs[0].data() as Family;
+  }
+  return null;
 }
 
 export async function setFamilyActiveTrip(
@@ -77,7 +121,18 @@ export async function updateMemberTemplates(
   familyId: string,
   memberTemplates: FamilyMember[]
 ): Promise<void> {
-  await updateDoc(doc(db, 'families', familyId), { memberTemplates });
+  await updateDoc(doc(db, 'families', familyId), {
+    memberTemplates,
+    memberEmails: extractMemberEmails(memberTemplates),
+  });
+}
+
+// Lazy backfill for families created before memberEmails was denormalized.
+export async function backfillMemberEmails(family: Family): Promise<void> {
+  if (family.memberEmails !== undefined) return;
+  await updateDoc(doc(db, 'families', family.id), {
+    memberEmails: extractMemberEmails(family.memberTemplates ?? []),
+  });
 }
 
 export async function setTripStatus(
