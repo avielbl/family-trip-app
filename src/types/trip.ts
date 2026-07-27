@@ -5,6 +5,40 @@ export interface TripConfig {
   endDate: string;
   familyMembers: FamilyMember[];
   adminUid?: string; // UID of admin user (set when admin first signs in)
+  familyId?: string; // back-reference to families/{familyId}
+  destination?: string; // e.g. "Greece"
+  destinationHe?: string;
+  countryCode?: string; // ISO 3166-1 alpha-2, e.g. "GR" (map queries)
+  flagEmoji?: string; // e.g. "🇬🇷"
+  status?: TripStatus;
+  createdAt?: string;
+}
+
+export type TripStatus = 'draft' | 'upcoming' | 'active' | 'archived';
+
+// The shared "home" that outlives any single trip. Holds the member roster
+// template and — critically — which trip is the family-wide active one.
+export interface Family {
+  id: string;
+  name: string;
+  adminUids: string[];
+  memberTemplates: FamilyMember[]; // prefill source for new trips
+  tripCodes: string[]; // newest first
+  activeTripCode: string | null;
+  createdAt: string;
+}
+
+// Lightweight card data for the trip manager (derived from TripConfig)
+export interface TripSummary {
+  tripCode: string;
+  tripName: string;
+  destination?: string;
+  destinationHe?: string;
+  flagEmoji?: string;
+  startDate: string;
+  endDate: string;
+  status: TripStatus;
+  memberCount: number;
 }
 
 export interface FamilyMember {
@@ -22,7 +56,9 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL?: string;
-  tripCode?: string;
+  tripCode?: string; // legacy single-trip pointer (kept for migration)
+  familyId?: string;
+  lastViewedTripCode?: string;
   memberId?: string; // matched FamilyMember.id
   createdAt: string;
 }
