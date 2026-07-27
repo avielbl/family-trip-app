@@ -18,11 +18,20 @@ import {
   Sun,
   BookOpen,
   Shield,
+  Luggage,
+  ChevronDown,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { useTripContext } from '../context/TripContext';
 
-const baseNavItems = [
+interface NavItem {
+  path: string;
+  icon: ComponentType<{ size?: number | string }>;
+  labelKey?: string;
+  label?: string;
+}
+
+const baseNavItems: NavItem[] = [
   { path: '/', icon: Home, labelKey: 'nav.home' },
   { path: '/flights', icon: Plane, labelKey: 'nav.flights' },
   { path: '/hotels', icon: Hotel, labelKey: 'nav.hotels' },
@@ -43,10 +52,12 @@ export default function Layout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const isRTL = i18n.language === 'he';
-  const { isAdmin } = useTripContext();
+  const isHe = i18n.language === 'he';
+  const { isAdmin, config, isViewingActiveTrip, returnToActiveTrip } = useTripContext();
 
-  const navItems = [
+  const navItems: NavItem[] = [
     ...baseNavItems,
+    { path: '/trips', icon: Luggage, label: isHe ? 'הטיולים שלנו' : 'Our Trips' },
     ...(isAdmin ? [{ path: '/admin', icon: Shield, labelKey: 'nav.admin' }] : []),
   ];
   const [darkMode, setDarkMode] = useState(() => {
@@ -74,7 +85,25 @@ export default function Layout() {
         <button className="menu-btn" onClick={() => setMenuOpen(!menuOpen)}>
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <h1 className="top-title">{t('app.title')}</h1>
+        <button
+          className="top-title"
+          onClick={() => navigate('/trips')}
+          style={{
+            background: 'none',
+            border: 'none',
+            fontFamily: 'inherit',
+            color: 'inherit',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          <span>
+            {config?.flagEmoji ?? '✈️'} {config?.tripName ?? t('app.title')}
+          </span>
+          <ChevronDown size={16} />
+        </button>
         <button
           className="menu-btn"
           onClick={() => setDarkMode(!darkMode)}
@@ -94,6 +123,44 @@ export default function Layout() {
         </button>
       </header>
 
+      {/* Non-active-trip banner */}
+      {!isViewingActiveTrip && (
+        <div
+          style={{
+            background: 'var(--amber-100, #fef3c7)',
+            color: '#92400e',
+            padding: '6px 12px',
+            fontSize: 13,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <span>
+            {isHe
+              ? `צופים ב־${config?.tripName ?? ''}`
+              : `Viewing ${config?.tripName ?? ''}`}
+          </span>
+          <button
+            onClick={returnToActiveTrip}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#92400e',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isHe ? 'חזרה לטיול הפעיל' : 'Return to active trip'}
+          </button>
+        </div>
+      )}
+
       {/* Side Menu */}
       {menuOpen && (
         <div className="menu-overlay" onClick={() => setMenuOpen(false)}>
@@ -111,7 +178,7 @@ export default function Layout() {
                 }}
               >
                 <item.icon size={20} />
-                <span>{t(item.labelKey)}</span>
+                <span>{item.labelKey ? t(item.labelKey) : item.label}</span>
               </button>
             ))}
           </nav>
