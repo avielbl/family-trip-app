@@ -1,4 +1,8 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
+
+// Stamped at build time (vite.config.ts define)
+declare const __BUILD_TIME__: string;
 
 interface ImportMetaEnv {
   readonly VITE_FIREBASE_API_KEY: string;
