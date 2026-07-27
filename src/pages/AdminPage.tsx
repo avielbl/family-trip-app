@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, HelpCircle, Sparkles, Loader2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
+import { useFamilyContext } from '../context/FamilyContext';
 import { claimAdminUid } from '../firebase/authService';
 import { saveTripConfig, saveQuizQuestion, deleteQuizQuestion } from '../firebase/tripService';
+import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
 import { GREECE_QUIZ_SEED } from '../data/greeceQuizSeed';
 import type { FamilyMember, QuizQuestion } from '../types/trip';
@@ -15,11 +17,13 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const { config, tripCode, isAdmin, quizQuestions, totalDays } = useTripContext();
   const { firebaseUser } = useAuthContext();
+  const { family, familyId } = useFamilyContext();
   const isHe = i18n.language === 'he';
 
   const [members, setMembers] = useState<FamilyMember[]>(
     config?.familyMembers ?? []
   );
+  const [syncFamily, setSyncFamily] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -69,6 +73,20 @@ export default function AdminPage() {
     setError('');
     try {
       await saveTripConfig({ ...config, familyMembers: members });
+
+      // Optionally propagate detail edits to the family roster: matching ids
+      // are updated, new members appended. Roster members who simply aren't
+      // on this trip are left untouched.
+      if (syncFamily && familyId) {
+        const templates = family?.memberTemplates ?? [];
+        const byId = new Map(members.map((m) => [m.id, m]));
+        const merged = [
+          ...templates.map((tmpl) => byId.get(tmpl.id) ?? tmpl),
+          ...members.filter((m) => !templates.some((tmpl) => tmpl.id === m.id)),
+        ];
+        await updateMemberTemplates(familyId, merged);
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -254,6 +272,19 @@ Return ONLY valid JSON, no markdown.`;
             </button>
           </div>
         ))}
+
+        {familyId && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-muted)', marginTop: '10px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={syncFamily}
+              onChange={(e) => setSyncFamily(e.target.checked)}
+            />
+            {isHe
+              ? 'עדכן גם את רשימת המשפחה הקבועה (לטיולים הבאים)'
+              : 'Also update the family roster (used for future trips)'}
+          </label>
+        )}
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
           <button className="admin-btn secondary" onClick={addMember}>

@@ -1,22 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Loader, Plus, LogIn, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useFamilyContext } from '../context/FamilyContext';
 import { saveTripDays } from '../firebase/tripService';
+import { updateMemberTemplates } from '../firebase/familyService';
 import BookingImport from '../components/BookingImport';
 import type { TripConfig, TripDay, FamilyMember } from '../types/trip';
 
 type WizardMode = 'choice' | 'join' | 'create' | 'members' | 'upload';
 
-const DEFAULT_MEMBERS: Partial<FamilyMember>[] = [
-  { name: '', nameHe: '', emoji: '👨', deviceType: 'phone' },
-  { name: '', nameHe: '', emoji: '👩', deviceType: 'phone' },
-  { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-  { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-  { name: '', nameHe: '', emoji: '👶', deviceType: 'tablet' },
-];
+// A roster row: the family-level member plus whether they join THIS trip.
+interface RosterRow {
+  member: FamilyMember;
+  included: boolean;
+  isNew: boolean; // added in this wizard session (not yet in the family roster)
+}
+
+function makeDefaultRoster(): RosterRow[] {
+  const defaults: Array<Pick<FamilyMember, 'emoji' | 'deviceType'>> = [
+    { emoji: '👨', deviceType: 'phone' },
+    { emoji: '👩', deviceType: 'phone' },
+    { emoji: '🧒', deviceType: 'phone' },
+    { emoji: '🧒', deviceType: 'phone' },
+    { emoji: '👶', deviceType: 'tablet' },
+  ];
+  return defaults.map((d, i) => ({
+    member: { id: `member-${i}`, name: '', nameHe: '', emoji: d.emoji, deviceType: d.deviceType },
+    included: true,
+    isNew: true,
+  }));
+}
 
 const MS_PER_DAY = 86400000;
 
@@ -71,12 +86,26 @@ export default function SetupPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // Members step — prefill from the family's member templates when available.
-  const [members, setMembers] = useState<Partial<FamilyMember>[]>(() =>
+  // Members step — the family roster is the baseline. Each row can be edited
+  // (edits sync back to the family collection) and toggled for THIS trip.
+  const [roster, setRoster] = useState<RosterRow[]>(() =>
     family?.memberTemplates?.length
-      ? family.memberTemplates.map((m) => ({ ...m }))
-      : DEFAULT_MEMBERS.map((m) => ({ ...m }))
+      ? family.memberTemplates.map((m) => ({ member: { ...m }, included: true, isNew: false }))
+      : makeDefaultRoster()
   );
+
+  // The family doc can finish loading after mount (e.g. direct navigation to
+  // /trips/new). Refresh the roster from the templates as long as the user
+  // hasn't reached the members step yet.
+  const rosterSeeded = useRef(!!family?.memberTemplates?.length);
+  useEffect(() => {
+    if (rosterSeeded.current) return;
+    if (mode === 'members' || mode === 'upload') return;
+    if (family?.memberTemplates?.length) {
+      setRoster(family.memberTemplates.map((m) => ({ member: { ...m }, included: true, isNew: false })));
+      rosterSeeded.current = true;
+    }
+  }, [family, mode]);
   // Default checked on first-run / when the family has no active trip.
   const [makeActive, setMakeActive] = useState(() => !family?.activeTripCode);
 
@@ -104,6 +133,24 @@ export default function SetupPage() {
     setCreateError('');
     try {
       const code = newTripCode.trim().toLowerCase();
+
+      // Full family roster (with edits, defaults applied) — ids stay stable
+      // across trips so scoreboards/photos/email matching remain consistent.
+      const fullRoster: FamilyMember[] = roster.map(({ member }, i) => ({
+        ...member,
+        name: member.name || `Member ${i + 1}`,
+        nameHe: member.nameHe || member.name || `בן משפחה ${i + 1}`,
+        emoji: member.emoji || '👤',
+        deviceType: member.deviceType || 'phone',
+      }));
+      const participants = fullRoster.filter((_, i) => roster[i].included);
+
+      if (participants.length === 0) {
+        setCreateError(isHe ? 'יש לבחור לפחות בן משפחה אחד לטיול' : 'Select at least one family member for this trip');
+        setCreating(false);
+        return;
+      }
+
       const config: TripConfig = {
         tripCode: code,
         tripName,
@@ -112,19 +159,22 @@ export default function SetupPage() {
         flagEmoji,
         startDate,
         endDate,
-        familyMembers: members.map((m, i) => ({
-          id: `member-${i}`,
-          name: m.name || `Member ${i + 1}`,
-          nameHe: m.nameHe || m.name || `בן משפחה ${i + 1}`,
-          emoji: m.emoji || '👤',
-          deviceType: m.deviceType || 'phone',
-        })),
+        familyMembers: participants,
         ...(familyId ? { familyId } : {}),
         status: 'upcoming',
         createdAt: new Date().toISOString(),
       };
 
       await registerTrip(config, makeActive);
+
+      // Sync edits (and newly added members) back to the family roster —
+      // including members not participating in this trip. registerTrip may
+      // have just created the family, so re-read the id from localStorage.
+      const resolvedFamilyId = familyId ?? localStorage.getItem('familyId');
+      if (resolvedFamilyId) {
+        await updateMemberTemplates(resolvedFamilyId, fullRoster);
+      }
+
       await saveTripDays(code, buildDayStubs(startDate, endDate, destination));
 
       if (!tripCode) {
@@ -305,72 +355,105 @@ export default function SetupPage() {
     );
   }
 
-  // Step 2: family members
+  // Step 2: family members — the family roster is the baseline. Uncheck a
+  // member to leave them out of THIS trip; edits update the family itself.
   if (mode === 'members') {
+    const updateRow = (i: number, patch: Partial<FamilyMember>) => {
+      setRoster((rows) =>
+        rows.map((row, idx) => (idx === i ? { ...row, member: { ...row.member, ...patch } } : row))
+      );
+    };
+
     return (
       <div className="setup-page">
         <h2>{isHe ? 'בני המשפחה' : 'Family Members'}</h2>
+        <p className="setup-description">
+          {isHe
+            ? 'זו רשימת המשפחה הקבועה. עדכון פרטים ישמר למשפחה; הסרת סימון תשאיר את בן המשפחה מחוץ לטיול הזה בלבד.'
+            : 'This is your family roster. Detail edits are saved to the family; unchecking leaves a member out of this trip only.'}
+        </p>
         <div className="setup-form">
-          {members.map((m, i) => (
-            <div key={i} className="member-row">
+          {roster.map((row, i) => (
+            <div
+              key={row.member.id}
+              className="member-row"
+              style={{ opacity: row.included ? 1 : 0.45, flexWrap: 'wrap' }}
+            >
+              <input
+                type="checkbox"
+                checked={row.included}
+                onChange={(e) =>
+                  setRoster((rows) =>
+                    rows.map((r, idx) => (idx === i ? { ...r, included: e.target.checked } : r))
+                  )
+                }
+                title={isHe ? 'משתתפ/ת בטיול הזה' : 'Joining this trip'}
+                style={{ width: '18px', height: '18px', flexShrink: 0 }}
+              />
               <input
                 className="setup-input small"
                 placeholder="Emoji"
-                value={m.emoji}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], emoji: e.target.value };
-                  setMembers(updated);
-                }}
-                style={{ width: '60px' }}
+                value={row.member.emoji}
+                onChange={(e) => updateRow(i, { emoji: e.target.value })}
+                style={{ width: '54px' }}
               />
               <input
                 className="setup-input"
                 placeholder="Name (English)"
-                value={m.name}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], name: e.target.value };
-                  setMembers(updated);
-                }}
+                value={row.member.name}
+                onChange={(e) => updateRow(i, { name: e.target.value })}
               />
               <input
                 className="setup-input"
                 placeholder="שם (עברית)"
                 dir="rtl"
-                value={m.nameHe}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], nameHe: e.target.value };
-                  setMembers(updated);
-                }}
+                value={row.member.nameHe}
+                onChange={(e) => updateRow(i, { nameHe: e.target.value })}
+              />
+              <input
+                className="setup-input"
+                type="email"
+                placeholder="email@..."
+                value={row.member.email ?? ''}
+                onChange={(e) => updateRow(i, { email: e.target.value })}
               />
               <select
                 className="setup-input small"
-                value={m.deviceType}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], deviceType: e.target.value as 'phone' | 'tablet' };
-                  setMembers(updated);
-                }}
+                value={row.member.deviceType}
+                onChange={(e) => updateRow(i, { deviceType: e.target.value as 'phone' | 'tablet' })}
               >
                 <option value="phone">📱</option>
                 <option value="tablet">📱 Tablet</option>
               </select>
-              <button
-                className="setup-btn text"
-                onClick={() => setMembers(members.filter((_, idx) => idx !== i))}
-                aria-label={isHe ? 'הסר בן משפחה' : 'Remove member'}
-                style={{ padding: '4px' }}
-              >
-                <Trash2 size={16} />
-              </button>
+              {row.isNew && (
+                <button
+                  className="setup-btn text"
+                  onClick={() => setRoster((rows) => rows.filter((_, idx) => idx !== i))}
+                  aria-label={isHe ? 'הסר בן משפחה' : 'Remove member'}
+                  style={{ padding: '4px' }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           ))}
           <button
             className="setup-btn text"
             onClick={() =>
-              setMembers([...members, { name: '', nameHe: '', emoji: '👤', deviceType: 'phone' }])
+              setRoster((rows) => [
+                ...rows,
+                {
+                  member: {
+                    id: `member-${Date.now()}`,
+                    name: '',
+                    nameHe: '',
+                    emoji: '👤',
+                    deviceType: 'phone',
+                  },
+                  included: true,
+                  isNew: true,
+                },
+              ])
             }
           >
             <Plus size={16} /> {isHe ? 'הוסף בן משפחה' : 'Add Member'}
