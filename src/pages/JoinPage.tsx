@@ -4,6 +4,21 @@ import { useTranslation } from 'react-i18next';
 import { LogIn, Loader, AlertCircle, Smartphone } from 'lucide-react';
 import { useAuthContext } from '../context/AuthContext';
 import { useTripContext } from '../context/TripContext';
+import { getTripConfig } from '../firebase/tripService';
+
+// After joining, adopt the trip's family (if any) and hard-reload so
+// FamilyContext re-resolves from the fresh localStorage state.
+async function finishJoin(tripCode: string): Promise<void> {
+  try {
+    const config = await getTripConfig(tripCode);
+    if (config?.familyId) {
+      localStorage.setItem('familyId', config.familyId);
+    }
+  } catch {
+    // Best-effort: joining still works without the family pointer.
+  }
+  window.location.assign('/');
+}
 
 export default function JoinPage() {
   const { tripCode: codeParam } = useParams<{ tripCode: string }>();
@@ -22,14 +37,15 @@ export default function JoinPage() {
       navigate('/');
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kick off the async join once codeParam is known
     setJoining(true);
     setTripCode(codeParam).then((ok) => {
       if (ok) {
-        navigate('/');
+        void finishJoin(codeParam);
       } else {
         setError(isHe ? 'קוד טיול לא תקין' : 'Invalid trip code');
+        setJoining(false);
       }
-      setJoining(false);
     });
   }, [firebaseUser, codeParam]);
 
@@ -45,7 +61,7 @@ export default function JoinPage() {
   return (
     <div className="join-page">
       <div className="join-hero">
-        <div className="setup-emoji">🇬🇷</div>
+        <div className="setup-emoji">✈️</div>
         <h1>{t('app.title')}</h1>
         <p className="join-subtitle">
           {isHe ? 'הוזמנת להצטרף לטיול המשפחתי!' : "You've been invited to join the family trip!"}
@@ -84,7 +100,7 @@ export default function JoinPage() {
             onClick={() => {
               if (codeParam) {
                 setTripCode(codeParam).then((ok) => {
-                  if (ok) navigate('/');
+                  if (ok) void finishJoin(codeParam);
                   else setError(isHe ? 'קוד טיול לא תקין' : 'Invalid trip code');
                 });
               }
