@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { FamilyProvider } from './context/FamilyContext';
 import { TripProvider, useTripContext } from './context/TripContext';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
@@ -31,7 +32,7 @@ function AppRoutes() {
         height: '100vh',
         fontSize: '48px',
       }}>
-        🇬🇷
+        ✈️
       </div>
     );
   }
@@ -74,9 +75,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <TripProvider>
-          <AppRoutes />
-        </TripProvider>
+        <FamilyProvider>
+          <TripProvider>
+            <AppRoutes />
+          </TripProvider>
+        </FamilyProvider>
       </AuthProvider>
     </BrowserRouter>
   );
