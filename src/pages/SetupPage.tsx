@@ -4,7 +4,19 @@ import { useTranslation } from 'react-i18next';
 import { Upload, FileText, Check, Loader, AlertCircle, Plus, LogIn } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { saveTripConfig, importTripData } from '../firebase/tripService';
+import {
+  buildBookingPrompt,
+  extractFromImages,
+  getAiSettings,
+  saveAiSettings,
+  stripJsonFences,
+} from '../ai';
 import type { TripConfig, FamilyMember } from '../types/trip';
+
+// Hardcoded trip dates for now — next sprint's create-trip wizard swaps these
+// for user-picked dates.
+const TRIP_START = '2026-03-24';
+const TRIP_END = '2026-04-04';
 
 export default function SetupPage() {
   const { t, i18n } = useTranslation();
@@ -28,7 +40,7 @@ export default function SetupPage() {
   const [parsing, setParsing] = useState(false);
   const [parsedData, setParsedData] = useState<string>('');
   const [parseError, setParseError] = useState('');
-  const [apiKey, setApiKey] = useState(localStorage.getItem('claudeApiKey') || '');
+  const [apiKey, setApiKey] = useState(() => getAiSettings().apiKey);
   const [creating, setCreating] = useState(false);
 
   const isHe = i18n.language === 'he';
@@ -63,8 +75,8 @@ export default function SetupPage() {
       await saveTripConfig(config);
       await setTripCode(config.tripCode);
       setMode('upload');
-    } catch (err: any) {
-      setParseError(err.message);
+    } catch (err) {
+      setParseError((err as Error).message);
     } finally {
       setCreating(false);
     }
@@ -93,73 +105,24 @@ export default function SetupPage() {
   async function handleParse() {
     if (!files.length) return;
     if (!apiKey) {
-      setParseError(isHe ? 'נדרש מפתח Claude API' : 'Claude API key required');
+      setParseError(isHe ? 'נדרש מפתח AI (בהגדרות)' : 'AI API key required (Settings)');
       return;
     }
-    localStorage.setItem('claudeApiKey', apiKey);
     setParsing(true);
     setParseError('');
 
     try {
-      const imageContents = await Promise.all(
-        files.map(async (file) => {
-          const base64 = await fileToBase64(file);
-          const mediaType = file.type || 'image/png';
-          return {
-            type: 'image' as const,
-            source: {
-              type: 'base64' as const,
-              media_type: mediaType,
-              data: base64,
-            },
-          };
-        })
+      const images = await Promise.all(
+        files.map(async (file) => ({
+          mediaType: file.type || 'image/png',
+          base64: await fileToBase64(file),
+        }))
       );
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4096,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                ...imageContents,
-                {
-                  type: 'text',
-                  text: `Extract all travel booking information from these confirmation screenshots/PDFs. Return a JSON object with the following structure:
-{
-  "flights": [{ "id": "flight-1", "dayIndex": 0, "airline": "", "flightNumber": "", "departureAirport": "", "departureAirportCode": "", "arrivalAirport": "", "arrivalAirportCode": "", "departureTime": "ISO datetime", "arrivalTime": "ISO datetime", "terminal": "", "gate": "", "confirmationCode": "" }],
-  "hotels": [{ "id": "hotel-1", "dayIndexStart": 0, "dayIndexEnd": 3, "name": "", "address": "", "city": "", "checkIn": "ISO datetime", "checkOut": "ISO datetime", "confirmationCode": "" }]
-}
-
-Trip starts March 24, 2026 (dayIndex 0) and ends April 4, 2026 (dayIndex 11).
-Calculate dayIndex based on the dates relative to March 24.
-Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
-                },
-              ],
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`API error: ${response.status} - ${err}`);
-      }
-
-      const data = await response.json();
-      const text = data.content[0]?.text || '';
-      setParsedData(text);
-    } catch (err: any) {
-      setParseError(err.message);
+      const text = await extractFromImages(buildBookingPrompt(TRIP_START, TRIP_END), images);
+      setParsedData(stripJsonFences(text));
+    } catch (err) {
+      setParseError((err as Error).message);
     } finally {
       setParsing(false);
     }
@@ -171,8 +134,8 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
       const parsed = JSON.parse(parsedData);
       await importTripData(tripCode, parsed);
       navigate('/');
-    } catch (err: any) {
-      setParseError(`Invalid JSON: ${err.message}`);
+    } catch (err) {
+      setParseError(`Invalid JSON: ${(err as Error).message}`);
     }
   }
 
@@ -338,14 +301,25 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
         <p className="setup-description">{t('setup.uploadDescription')}</p>
 
         <div className="setup-form">
+          {!apiKey && (
+            <p className="setup-error">
+              <AlertCircle size={16} />{' '}
+              {isHe
+                ? 'לא הוגדר מפתח AI. הגדירו אותו בהגדרות, או הזינו אותו כאן:'
+                : 'No AI API key configured. Set one in Settings, or enter it below:'}
+            </p>
+          )}
           <label className="setup-label">
-            Claude API Key
+            {isHe ? 'מפתח AI API' : 'AI API Key'}
             <input
               type="password"
               className="setup-input"
-              placeholder="sk-ant-..."
+              placeholder="sk-ant-... / AIza..."
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                saveAiSettings({ ...getAiSettings(), apiKey: e.target.value });
+              }}
             />
           </label>
 
