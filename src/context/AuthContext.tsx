@@ -5,6 +5,7 @@ import { auth } from '../firebase/config';
 import {
   signInWithGoogle as firebaseSignInWithGoogle,
   signOutUser as firebaseSignOut,
+  completeRedirectSignIn,
   upsertUserProfile,
 } from '../firebase/authService';
 import type { UserProfile, FamilyMember } from '../types/trip';
@@ -23,6 +24,7 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   isAdmin: boolean;
   authLoading: boolean;
+  authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signOutUser: () => Promise<void>;
   // For virtual members on shared tablets
@@ -43,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [virtualMember, setVirtualMember] = useState<FamilyMember | null>(() => {
     const saved = localStorage.getItem('virtualMember');
     if (saved) {
@@ -52,6 +55,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const isAdmin = firebaseUser?.email === ADMIN_EMAIL;
+
+  // Complete a pending redirect sign-in (installed-PWA flow) and surface
+  // any error it produced — the user state itself arrives via
+  // onAuthStateChanged below.
+  useEffect(() => {
+    completeRedirectSignIn().then((err) => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- async result
+      if (err) setAuthError(err);
+    });
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -73,7 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
-    await firebaseSignInWithGoogle();
+    setAuthError(null);
+    try {
+      await firebaseSignInWithGoogle();
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      // User closing the popup isn't an error worth showing.
+      if (e.code !== 'auth/popup-closed-by-user') {
+        setAuthError(e.code ?? e.message ?? 'sign-in failed');
+      }
+      throw err;
+    }
   }, []);
 
   const signOutUser = useCallback(async () => {
@@ -93,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userProfile,
         isAdmin,
         authLoading,
+        authError,
         signInWithGoogle,
         signOutUser,
         virtualMember,
