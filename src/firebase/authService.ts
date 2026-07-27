@@ -1,10 +1,59 @@
-import { signInWithPopup, signOut } from 'firebase/auth';
+import {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signOut,
+} from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, googleProvider } from './config';
 import type { UserProfile, FamilyMember, TripConfig } from '../types/trip';
 
+// Installed PWAs (standalone display mode) can't reliably open the Google
+// sign-in popup — use the redirect flow there and fall back to it whenever
+// the popup is blocked.
+function isStandaloneApp(): boolean {
+  return (
+    window.matchMedia?.('(display-mode: standalone)')?.matches === true ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
 export async function signInWithGoogle(): Promise<void> {
-  await signInWithPopup(auth, googleProvider);
+  if (isStandaloneApp()) {
+    await signInWithRedirect(auth, googleProvider);
+    return;
+  }
+  try {
+    await signInWithPopup(auth, googleProvider);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      await signInWithRedirect(auth, googleProvider);
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Completes a pending redirect sign-in after the page reloads. The signed-in
+ * user itself arrives via onAuthStateChanged; this call exists to surface
+ * redirect errors (e.g. auth/unauthorized-domain). Returns an error message
+ * or null.
+ */
+export async function completeRedirectSignIn(): Promise<string | null> {
+  try {
+    await getRedirectResult(auth);
+    return null;
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    console.error('Redirect sign-in failed:', e.code, e.message);
+    return e.code ?? e.message ?? 'sign-in failed';
+  }
 }
 
 export async function signOutUser(): Promise<void> {

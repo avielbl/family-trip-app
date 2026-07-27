@@ -66,7 +66,7 @@ export default function SetupPage() {
   const location = useLocation();
   const { setTripCode, tripCode, browseTrip } = useTripContext();
   const { family, familyId, familyLoading, registerTrip } = useFamilyContext();
-  const { firebaseUser, authLoading, signInWithGoogle } = useAuthContext();
+  const { firebaseUser, authLoading, authError, signInWithGoogle } = useAuthContext();
 
   const isHe = i18n.language === 'he';
   // In-app usage (integrator routes /trips/new here): skip the first-run
@@ -229,7 +229,10 @@ export default function SetupPage() {
                   ? 'כבר יש לכם טיולים? התחברו כדי לשחזר אותם'
                   : 'Already have trips? Sign in to restore them'}
               </p>
-              <button className="google-signin-btn" onClick={signInWithGoogle}>
+              <button
+                className="google-signin-btn"
+                onClick={() => signInWithGoogle().catch(() => { /* surfaced via authError */ })}
+              >
                 <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
                   <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
                   <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
@@ -238,6 +241,12 @@ export default function SetupPage() {
                 </svg>
                 {isHe ? 'התחבר עם Google' : 'Sign in with Google'}
               </button>
+              {authError && (
+                <p className="setup-error">
+                  <AlertCircle size={16} />{' '}
+                  {isHe ? `הכניסה נכשלה: ${authError}` : `Sign-in failed: ${authError}`}
+                </p>
+              )}
               <div className="setup-or">{t('setup.or')}</div>
             </>
           ) : (

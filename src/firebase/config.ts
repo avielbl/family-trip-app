@@ -7,9 +7,17 @@ import {
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
+// Serve the auth helpers from the app's own origin when deployed on Firebase
+// Hosting (which exposes /__/auth on every hosting domain). Same-origin auth
+// is required for the redirect sign-in flow to survive third-party-storage
+// blocking in installed PWAs (iOS/Android standalone mode).
+const isLocalDev = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  authDomain: isLocalDev
+    ? import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || ''
+    : window.location.host,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
