@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: 'Greece Trip 2026',
+    title: 'Family Trip',
     subtitle: 'Family Adventure',
   },
   nav: {
@@ -21,9 +21,9 @@ export default {
     admin: 'Admin',
   },
   home: {
-    countdown: '{{days}} days until Greece!',
-    countdownToday: "You're in Greece! 🇬🇷",
-    dayOf: 'Day {{day}} of 12',
+    countdown: '{{days}} days until {{destination}}!',
+    countdownToday: "You're in {{destination}}! {{flag}}",
+    dayOf: 'Day {{day}} of {{total}}',
     progress: '{{percent}}% of the trip',
     todayLabel: 'Today',
     upcomingFlights: 'Upcoming Flights',
@@ -103,7 +103,8 @@ export default {
     byMember: 'By {{name}}',
   },
   quiz: {
-    title: 'Greece Quiz',
+    title: 'Trip Quiz',
+    adminHint: 'No questions yet — seed or generate them in the Admin page.',
     question: 'Question',
     correct: 'Correct! 🎉',
     incorrect: 'Not quite!',

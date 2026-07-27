@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 
-const TOTAL_DAYS = 12;
+const DEFAULT_STAMP_THEME = { emoji: '🏛️', color: '#8b6914' };
 
 const DAY_STAMP_THEMES: Record<number, { emoji: string; color: string }> = {
   1: { emoji: '✈️', color: '#4a90d9' },
@@ -21,7 +22,7 @@ const DAY_STAMP_THEMES: Record<number, { emoji: string; color: string }> = {
 
 const PassportPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { highlights } = useTripContext();
+  const { highlights, config, totalDays } = useTripContext();
 
   const isHebrew = i18n.language === 'he';
 
@@ -31,26 +32,35 @@ const PassportPage: React.FC = () => {
       highlights.forEach((highlight) => {
         if (highlight.completed) {
           const dayIndex = highlight.dayIndex;
-          if (dayIndex !== undefined && dayIndex >= 0 && dayIndex < TOTAL_DAYS) {
+          if (dayIndex !== undefined && dayIndex >= 0 && dayIndex < totalDays) {
             earned.add(dayIndex);
           }
         }
       });
     }
     return earned;
-  }, [highlights]);
+  }, [highlights, totalDays]);
 
   const stampsCollected = earnedDays.size;
-  const allCollected = stampsCollected === TOTAL_DAYS;
+  const allCollected = totalDays > 0 && stampsCollected === totalDays;
+
+  let datesLine = '';
+  if (config) {
+    try {
+      datesLine = `${format(parseISO(config.startDate), 'MMM d')} – ${format(parseISO(config.endDate), 'MMM d')}`;
+    } catch {
+      datesLine = '';
+    }
+  }
 
   return (
     <div className="passport-page" dir={isHebrew ? 'rtl' : 'ltr'}>
       <div className="passport-book">
         <div className="passport-header">
-          <div className="passport-emblem">🇬🇷</div>
+          <div className="passport-emblem">{config?.flagEmoji ?? '✈️'}</div>
           <h1>{t('passport.title')}</h1>
-          <div className="passport-subtitle">Greece 2026</div>
-          <div className="passport-dates">March 24 – April 4</div>
+          <div className="passport-subtitle">{config?.tripName ?? ''}</div>
+          {datesLine && <div className="passport-dates">{datesLine}</div>}
         </div>
 
         <div className="stamp-count">
@@ -61,15 +71,15 @@ const PassportPage: React.FC = () => {
               <span className="celebration-emoji">🎉</span>
             </div>
           ) : (
-            <p>{t('passport.stampsCollected', { count: stampsCollected, total: TOTAL_DAYS })}</p>
+            <p>{t('passport.stampsCollected', { count: stampsCollected, total: totalDays })}</p>
           )}
         </div>
 
         <div className="stamp-grid">
-          {Array.from({ length: TOTAL_DAYS }, (_, index) => {
+          {Array.from({ length: totalDays }, (_, index) => {
             const dayNumber = index + 1;
             const isEarned = earnedDays.has(index);
-            const theme = DAY_STAMP_THEMES[dayNumber] || { emoji: '🏛️', color: '#8b6914' };
+            const theme = DAY_STAMP_THEMES[dayNumber] || DEFAULT_STAMP_THEME;
 
             return (
               <div
