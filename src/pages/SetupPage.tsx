@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, Loader, Plus, LogIn, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useFamilyContext } from '../context/FamilyContext';
+import { useAuthContext } from '../context/AuthContext';
 import { saveTripDays } from '../firebase/tripService';
 import { updateMemberTemplates } from '../firebase/familyService';
 import BookingImport from '../components/BookingImport';
@@ -64,7 +65,8 @@ export default function SetupPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setTripCode, tripCode, browseTrip } = useTripContext();
-  const { family, familyId, registerTrip } = useFamilyContext();
+  const { family, familyId, familyLoading, registerTrip } = useFamilyContext();
+  const { firebaseUser, authLoading, signInWithGoogle } = useAuthContext();
 
   const isHe = i18n.language === 'he';
   // In-app usage (integrator routes /trips/new here): skip the first-run
@@ -193,8 +195,24 @@ export default function SetupPage() {
     }
   }
 
-  // Choice screen (first-run only)
+  // Choice screen (first-run only). Sign-in comes first: an existing user
+  // who cleared local data recovers their family and trips just by signing in.
   if (mode === 'choice') {
+    if (authLoading || (firebaseUser && familyLoading)) {
+      return (
+        <div className="setup-page">
+          <div className="setup-hero">
+            <div className="setup-emoji">✈️</div>
+            <h1>{t('app.title')}</h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+            <Loader size={20} className="spin" />
+            <span>{isHe ? 'משחזר את הטיולים שלך...' : 'Restoring your trips...'}</span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="setup-page">
         <div className="setup-hero">
@@ -204,6 +222,32 @@ export default function SetupPage() {
         </div>
 
         <div className="setup-choices">
+          {!firebaseUser ? (
+            <>
+              <p className="setup-description" style={{ textAlign: 'center' }}>
+                {isHe
+                  ? 'כבר יש לכם טיולים? התחברו כדי לשחזר אותם'
+                  : 'Already have trips? Sign in to restore them'}
+              </p>
+              <button className="google-signin-btn" onClick={signInWithGoogle}>
+                <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                  <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                  <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                  <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+                  <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
+                </svg>
+                {isHe ? 'התחבר עם Google' : 'Sign in with Google'}
+              </button>
+              <div className="setup-or">{t('setup.or')}</div>
+            </>
+          ) : (
+            <p className="setup-description" style={{ textAlign: 'center' }}>
+              {isHe
+                ? `מחובר/ת כ־${firebaseUser.displayName ?? firebaseUser.email} — לא נמצאה משפחה קיימת`
+                : `Signed in as ${firebaseUser.displayName ?? firebaseUser.email} — no existing family found`}
+            </p>
+          )}
+
           <button className="setup-choice-btn primary" onClick={() => setMode('create')}>
             <Plus size={24} />
             <span>{t('setup.createTrip')}</span>
