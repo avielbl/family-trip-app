@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: 'טיול יוון 2026',
+    title: 'טיול משפחתי',
     subtitle: 'הרפתקה משפחתית',
   },
   nav: {
@@ -21,9 +21,9 @@ export default {
     admin: 'ניהול',
   },
   home: {
-    countdown: '{{days}} ימים עד יוון!',
-    countdownToday: 'אתם ביוון! 🇬🇷',
-    dayOf: 'יום {{day}} מתוך 12',
+    countdown: '{{days}} ימים עד {{destination}}!',
+    countdownToday: 'אתם ב{{destination}}! {{flag}}',
+    dayOf: 'יום {{day}} מתוך {{total}}',
     progress: '{{percent}}% מהטיול',
     todayLabel: 'היום',
     upcomingFlights: 'טיסות קרובות',
@@ -103,7 +103,8 @@ export default {
     byMember: 'מאת {{name}}',
   },
   quiz: {
-    title: 'חידון יוון',
+    title: 'חידון הטיול',
+    adminHint: 'אין שאלות עדיין — טענו או ייצרו אותן בעמוד הניהול.',
     question: 'שאלה',
     correct: 'נכון! 🎉',
     incorrect: 'לא בדיוק!',

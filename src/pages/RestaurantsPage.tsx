@@ -13,7 +13,7 @@ type FilterTab = 'all' | 'visited' | 'notVisited';
 
 const RestaurantsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { restaurants, tripCode, currentMember, isAdmin } = useTripContext();
+  const { restaurants, tripCode, currentMember, isAdmin, config } = useTripContext();
   const [editItem, setEditItem] = useState<Restaurant | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [hoveredStars, setHoveredStars] = useState<Record<string, number>>({});
@@ -41,7 +41,8 @@ const RestaurantsPage: React.FC = () => {
     if (restaurant.mapUrl) {
       window.open(restaurant.mapUrl, '_blank', 'noopener,noreferrer');
     } else {
-      const query = encodeURIComponent(`${restaurant.name}${restaurant.city ? `, ${restaurant.city}` : ''}, Greece`);
+      const destinationSuffix = config?.destination ? `, ${config.destination}` : '';
+      const query = encodeURIComponent(`${restaurant.name}${restaurant.city ? `, ${restaurant.city}` : ''}${destinationSuffix}`);
       window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank', 'noopener,noreferrer');
     }
   };
@@ -245,10 +246,10 @@ function RestaurantModal({ restaurant, isHe, onSave, onClose, t }: {
           ['address', isHe ? 'כתובת' : 'Address'],
           ['phone', isHe ? 'טלפון' : 'Phone'],
           ['notes', isHe ? 'הערות' : 'Notes'],
-        ] as [keyof Restaurant, string][]).map(([field, label]) => (
+        ] as ['name' | 'nameHe' | 'cuisine' | 'city' | 'address' | 'phone' | 'notes', string][]).map(([field, label]) => (
           <div className="form-group" key={field}>
             <label className="form-label">{label}</label>
-            <input className="form-input" value={(form as any)[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
+            <input className="form-input" value={form[field] ?? ''} onChange={(e) => set(field, e.target.value)} />
           </div>
         ))}
         <div className="form-group">

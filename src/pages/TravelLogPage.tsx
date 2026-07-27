@@ -14,6 +14,7 @@ import {
 import { useTripContext } from '../context/TripContext';
 import { saveTravelLogEntry } from '../firebase/tripService';
 import { savePhoto } from '../firebase/tripService';
+import { generateText, hasAiKey } from '../ai';
 import type { TravelLogEntry, ContentBlock } from '../types/trip';
 
 export default function TravelLogPage() {
@@ -24,6 +25,7 @@ export default function TravelLogPage() {
     tripCode,
     currentMember,
     highlights,
+    config,
   } = useTripContext();
 
   const [selectedDay, setSelectedDay] = useState(0);
@@ -37,12 +39,12 @@ export default function TravelLogPage() {
   const entry = travelLog.find((e) => e.dayIndex === selectedDay);
   const currentDay = days.find((d) => d.dayIndex === selectedDay);
 
-  const apiKey = localStorage.getItem('claudeApiKey') ?? '';
+  const aiKeyConfigured = hasAiKey();
 
   async function handleGenerate() {
     if (!currentDay || !tripCode) return;
-    if (!apiKey) {
-      setGenError(isHe ? 'נדרש מפתח Claude API (נשמר בהגדרות)' : 'Claude API key required (saved in settings)');
+    if (!aiKeyConfigured) {
+      setGenError(isHe ? 'נדרש מפתח AI (בהגדרות)' : 'AI API key required (Settings)');
       return;
     }
 
@@ -52,7 +54,8 @@ export default function TravelLogPage() {
     const dayHighlights = highlights.filter((h) => h.dayIndex === selectedDay && h.completed);
     const photos = (entry?.blocks ?? []).filter((b) => b.type === 'photo');
 
-    const prompt = `You are writing a family travel log entry for Day ${selectedDay + 1} of our Greece 2026 trip.
+    const tripLabel = config?.tripName ? `our ${config.tripName} trip` : 'our family trip';
+    const prompt = `You are writing a family travel log entry for Day ${selectedDay + 1} of ${tripLabel}.
 Day title: ${currentDay.title}
 Location: ${currentDay.location}
 Completed highlights: ${dayHighlights.map((h) => h.name).join(', ') || 'none yet'}
@@ -61,27 +64,7 @@ Photo captions: ${photos.map((p) => p.caption).filter(Boolean).join('; ') || 'no
 Write a warm, fun, family-friendly travel log entry in English. Include a brief narrative of what we did, what we saw, and any memorable moments. Keep it to 2-3 paragraphs. Return ONLY the text content, no markdown, no title.`;
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1024,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const text = data.content[0]?.text ?? '';
+      const text = await generateText(prompt, 1024);
 
       // Build new entry preserving existing blocks, replacing text blocks
       const existingPhotoBlocks = (entry?.blocks ?? []).filter((b) => b.type === 'photo');
@@ -104,8 +87,8 @@ Write a warm, fun, family-friendly travel log entry in English. Include a brief 
       };
 
       await saveTravelLogEntry(tripCode, updatedEntry);
-    } catch (e: any) {
-      setGenError(e.message);
+    } catch (e) {
+      setGenError((e as Error).message);
     } finally {
       setGenerating(false);
     }
@@ -227,7 +210,7 @@ Write a warm, fun, family-friendly travel log entry in English. Include a brief 
       <button
         className="travel-log-generate-btn"
         onClick={handleGenerate}
-        disabled={generating || !apiKey}
+        disabled={generating || !aiKeyConfigured}
       >
         {generating ? <Loader size={16} className="spin" /> : <Sparkles size={16} />}
         {generating

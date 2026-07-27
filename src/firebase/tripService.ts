@@ -8,7 +8,7 @@ import {
   writeBatch,
   deleteDoc,
 } from 'firebase/firestore';
-import type { Unsubscribe } from 'firebase/firestore';
+import type { DocumentData, Unsubscribe } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 import type {
@@ -23,6 +23,7 @@ import type {
   PackingItem,
   PhotoEntry,
   QuizAnswer,
+  QuizQuestion,
   TravelLogEntry,
 } from '../types/trip';
 
@@ -225,7 +226,8 @@ export async function savePhoto(
   await uploadString(storageRef, photo.imageDataUrl, 'data_url');
   const imageUrl = await getDownloadURL(storageRef);
 
-  const { imageDataUrl: _, ...photoMeta } = photo;
+  const photoMeta: Partial<typeof photo> = { ...photo };
+  delete photoMeta.imageDataUrl;
   await setDoc(doc(db, 'trips', tripCode, 'photos', photo.id), {
     ...photoMeta,
     imageUrl,
@@ -255,6 +257,28 @@ export function subscribeQuizAnswers(
   const colRef = collection(db, 'trips', tripCode, 'quizAnswers');
   return onSnapshot(colRef, (snap) => {
     callback(snap.docs.map((d) => d.data() as QuizAnswer));
+  });
+}
+
+// Quiz Questions (per-trip question bank)
+export async function saveQuizQuestion(tripCode: string, q: QuizQuestion): Promise<void> {
+  await setDoc(doc(db, 'trips', tripCode, 'quizQuestions', q.id), q);
+}
+
+export async function deleteQuizQuestion(tripCode: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'quizQuestions', id));
+}
+
+export function subscribeQuizQuestions(
+  tripCode: string,
+  callback: (questions: QuizQuestion[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'trips', tripCode, 'quizQuestions');
+  return onSnapshot(colRef, (snap) => {
+    const questions = snap.docs
+      .map((d) => d.data() as QuizQuestion)
+      .sort((a, b) => a.dayIndex - b.dayIndex);
+    callback(questions);
   });
 }
 
@@ -337,7 +361,7 @@ export async function importTripData(
     if (!items?.length) return;
     const batch = writeBatch(db);
     for (const item of items) {
-      batch.set(doc(db, 'trips', tripCode, subcollection, item.id), item as any);
+      batch.set(doc(db, 'trips', tripCode, subcollection, item.id), item as unknown as DocumentData);
     }
     await batch.commit();
   };

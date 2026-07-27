@@ -19,8 +19,6 @@ import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import type { Flight, Hotel as HotelType, Highlight } from '../types/trip';
 
-const TOTAL_DAYS = 12;
-
 /** Map highlight categories to icons */
 const categoryIcons: Record<string, React.ReactNode> = {
   beach: <Waves size={18} />,
@@ -47,14 +45,21 @@ export default function HomePage() {
     tripStarted,
     tripEnded,
     config,
+    totalDays,
   } = useTripContext();
 
   const isRTL = i18n.language === 'he';
 
+  const destination =
+    (isRTL
+      ? config?.destinationHe ?? config?.destination ?? config?.tripName
+      : config?.destination ?? config?.tripName) ?? '';
+  const flag = config?.flagEmoji ?? '✈️';
+
   // Current day number (1-based) and progress
   const currentDayNumber = todayDayIndex >= 0 ? todayDayIndex + 1 : 0;
-  const progressPercent = tripStarted && !tripEnded
-    ? Math.round((currentDayNumber / TOTAL_DAYS) * 100)
+  const progressPercent = tripStarted && !tripEnded && totalDays > 0
+    ? Math.round((currentDayNumber / totalDays) * 100)
     : tripEnded
       ? 100
       : 0;
@@ -110,16 +115,16 @@ export default function HomePage() {
           </div>
           <h1 className="countdown-number">{daysUntilTrip}</h1>
           <p className="countdown-label">
-            {t('home.countdown', { days: daysUntilTrip })}
+            {t('home.countdown', { days: daysUntilTrip, destination, flag })}
           </p>
-          <div className="countdown-dates">
-            <Calendar size={16} />
-            <span>
-              {config
-                ? `${format(parseISO(config.startDate), 'MMM d')} - ${format(parseISO(config.endDate), 'MMM d, yyyy')}`
-                : 'Mar 24 - Apr 4, 2026'}
-            </span>
-          </div>
+          {config && (
+            <div className="countdown-dates">
+              <Calendar size={16} />
+              <span>
+                {`${format(parseISO(config.startDate), 'MMM d')} - ${format(parseISO(config.endDate), 'MMM d, yyyy')}`}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Upcoming Flights Preview */}
@@ -145,9 +150,9 @@ export default function HomePage() {
       <div className="home-page">
         {/* Day Hero */}
         <div className="day-card">
-          <p className="day-greeting">{t('home.countdownToday')}</p>
+          <p className="day-greeting">{t('home.countdownToday', { destination, flag })}</p>
           <h1 className="day-title">
-            {t('home.dayOf', { day: currentDayNumber })}
+            {t('home.dayOf', { day: currentDayNumber, total: totalDays })}
           </h1>
           {todayDay && (
             <p className="day-location">
@@ -242,7 +247,7 @@ export default function HomePage() {
 
           <div className="summary-stats">
             <div className="stat-item">
-              <span className="stat-number">{TOTAL_DAYS}</span>
+              <span className="stat-number">{totalDays}</span>
               <span className="stat-label">{t('common.day')}s</span>
             </div>
             <div className="stat-item">

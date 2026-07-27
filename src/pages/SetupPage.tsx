@@ -1,37 +1,92 @@
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Upload, FileText, Check, Loader, AlertCircle, Plus, LogIn } from 'lucide-react';
+import { AlertCircle, Loader, Plus, LogIn, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
-import { saveTripConfig, importTripData } from '../firebase/tripService';
-import type { TripConfig, FamilyMember } from '../types/trip';
+import { useFamilyContext } from '../context/FamilyContext';
+import { saveTripDays } from '../firebase/tripService';
+import BookingImport from '../components/BookingImport';
+import type { TripConfig, TripDay, FamilyMember } from '../types/trip';
+
+type WizardMode = 'choice' | 'join' | 'create' | 'members' | 'upload';
+
+const DEFAULT_MEMBERS: Partial<FamilyMember>[] = [
+  { name: '', nameHe: '', emoji: '👨', deviceType: 'phone' },
+  { name: '', nameHe: '', emoji: '👩', deviceType: 'phone' },
+  { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
+  { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
+  { name: '', nameHe: '', emoji: '👶', deviceType: 'tablet' },
+];
+
+const MS_PER_DAY = 86400000;
+
+function buildDayStubs(startDate: string, endDate: string, location: string): TripDay[] {
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
+  const dayCount = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1;
+
+  const days: TripDay[] = [];
+  for (let i = 0; i < dayCount; i++) {
+    const date = new Date(start.getTime() + i * MS_PER_DAY);
+    days.push({
+      dayIndex: i,
+      date: date.toISOString().slice(0, 10),
+      title: `Day ${i + 1}`,
+      titleHe: `יום ${i + 1}`,
+      location,
+      flights: [],
+      hotels: [],
+      driving: [],
+      highlights: [],
+      restaurants: [],
+    });
+  }
+  return days;
+}
 
 export default function SetupPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { setTripCode, tripCode } = useTripContext();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [mode, setMode] = useState<'choice' | 'join' | 'create' | 'upload'>('choice');
-  const [joinCode, setJoinCode] = useState('');
-  const [joinError, setJoinError] = useState('');
-  const [newTripCode, setNewTripCode] = useState('');
-  const [tripName, setTripName] = useState('Greece 2026');
-  const [members, setMembers] = useState<Partial<FamilyMember>[]>([
-    { name: '', nameHe: '', emoji: '👨', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '👩', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '👶', deviceType: 'tablet' },
-  ]);
-  const [files, setFiles] = useState<File[]>([]);
-  const [parsing, setParsing] = useState(false);
-  const [parsedData, setParsedData] = useState<string>('');
-  const [parseError, setParseError] = useState('');
-  const [apiKey, setApiKey] = useState(localStorage.getItem('claudeApiKey') || '');
-  const [creating, setCreating] = useState(false);
+  const location = useLocation();
+  const { setTripCode, tripCode, browseTrip } = useTripContext();
+  const { family, familyId, registerTrip } = useFamilyContext();
 
   const isHe = i18n.language === 'he';
+  // In-app usage (integrator routes /trips/new here): skip the first-run
+  // choice screen and start straight at trip details.
+  const inApp = location.pathname === '/trips/new';
+
+  const [mode, setMode] = useState<WizardMode>(inApp ? 'create' : 'choice');
+
+  // Join step
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState('');
+
+  // Create step (trip details)
+  const [newTripCode, setNewTripCode] = useState('');
+  const [tripName, setTripName] = useState('');
+  const [destination, setDestination] = useState('');
+  const [destinationHe, setDestinationHe] = useState('');
+  const [flagEmoji, setFlagEmoji] = useState('✈️');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // Members step — prefill from the family's member templates when available.
+  const [members, setMembers] = useState<Partial<FamilyMember>[]>(() =>
+    family?.memberTemplates?.length
+      ? family.memberTemplates.map((m) => ({ ...m }))
+      : DEFAULT_MEMBERS.map((m) => ({ ...m }))
+  );
+  // Default checked on first-run / when the family has no active trip.
+  const [makeActive, setMakeActive] = useState(() => !family?.activeTripCode);
+
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createdCode, setCreatedCode] = useState('');
+
+  const dateOrderValid = !startDate || !endDate || endDate >= startDate;
+  const detailsValid =
+    newTripCode.trim().length > 0 && !!startDate && !!endDate && endDate >= startDate;
 
   async function handleJoin() {
     setJoinError('');
@@ -44,14 +99,19 @@ export default function SetupPage() {
   }
 
   async function handleCreateTrip() {
-    if (!newTripCode.trim()) return;
+    if (!detailsValid) return;
     setCreating(true);
+    setCreateError('');
     try {
+      const code = newTripCode.trim().toLowerCase();
       const config: TripConfig = {
-        tripCode: newTripCode.trim().toLowerCase(),
+        tripCode: code,
         tripName,
-        startDate: '2026-03-24',
-        endDate: '2026-04-04',
+        destination,
+        destinationHe,
+        flagEmoji,
+        startDate,
+        endDate,
         familyMembers: members.map((m, i) => ({
           id: `member-${i}`,
           name: m.name || `Member ${i + 1}`,
@@ -59,129 +119,36 @@ export default function SetupPage() {
           emoji: m.emoji || '👤',
           deviceType: m.deviceType || 'phone',
         })),
+        ...(familyId ? { familyId } : {}),
+        status: 'upcoming',
+        createdAt: new Date().toISOString(),
       };
-      await saveTripConfig(config);
-      await setTripCode(config.tripCode);
+
+      await registerTrip(config, makeActive);
+      await saveTripDays(code, buildDayStubs(startDate, endDate, destination));
+
+      if (!tripCode) {
+        // First-run: no current trip on this device yet.
+        await setTripCode(code);
+      } else {
+        browseTrip(code);
+      }
+
+      setCreatedCode(code);
       setMode('upload');
-    } catch (err: any) {
-      setParseError(err.message);
+    } catch (err) {
+      setCreateError((err as Error).message);
     } finally {
       setCreating(false);
     }
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files) {
-      setFiles(Array.from(e.target.files));
-    }
-  }
-
-  async function fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Extract base64 part after data:...;base64,
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function handleParse() {
-    if (!files.length) return;
-    if (!apiKey) {
-      setParseError(isHe ? 'נדרש מפתח Claude API' : 'Claude API key required');
-      return;
-    }
-    localStorage.setItem('claudeApiKey', apiKey);
-    setParsing(true);
-    setParseError('');
-
-    try {
-      const imageContents = await Promise.all(
-        files.map(async (file) => {
-          const base64 = await fileToBase64(file);
-          const mediaType = file.type || 'image/png';
-          return {
-            type: 'image' as const,
-            source: {
-              type: 'base64' as const,
-              media_type: mediaType,
-              data: base64,
-            },
-          };
-        })
-      );
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4096,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                ...imageContents,
-                {
-                  type: 'text',
-                  text: `Extract all travel booking information from these confirmation screenshots/PDFs. Return a JSON object with the following structure:
-{
-  "flights": [{ "id": "flight-1", "dayIndex": 0, "airline": "", "flightNumber": "", "departureAirport": "", "departureAirportCode": "", "arrivalAirport": "", "arrivalAirportCode": "", "departureTime": "ISO datetime", "arrivalTime": "ISO datetime", "terminal": "", "gate": "", "confirmationCode": "" }],
-  "hotels": [{ "id": "hotel-1", "dayIndexStart": 0, "dayIndexEnd": 3, "name": "", "address": "", "city": "", "checkIn": "ISO datetime", "checkOut": "ISO datetime", "confirmationCode": "" }]
-}
-
-Trip starts March 24, 2026 (dayIndex 0) and ends April 4, 2026 (dayIndex 11).
-Calculate dayIndex based on the dates relative to March 24.
-Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
-                },
-              ],
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`API error: ${response.status} - ${err}`);
-      }
-
-      const data = await response.json();
-      const text = data.content[0]?.text || '';
-      setParsedData(text);
-    } catch (err: any) {
-      setParseError(err.message);
-    } finally {
-      setParsing(false);
-    }
-  }
-
-  async function handleSaveParsed() {
-    if (!parsedData || !tripCode) return;
-    try {
-      const parsed = JSON.parse(parsedData);
-      await importTripData(tripCode, parsed);
-      navigate('/');
-    } catch (err: any) {
-      setParseError(`Invalid JSON: ${err.message}`);
-    }
-  }
-
-  // Choice screen
+  // Choice screen (first-run only)
   if (mode === 'choice') {
     return (
       <div className="setup-page">
         <div className="setup-hero">
-          <div className="setup-emoji">🇬🇷</div>
+          <div className="setup-emoji">✈️</div>
           <h1>{t('app.title')}</h1>
           <p>{t('app.subtitle')}</p>
         </div>
@@ -201,7 +168,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
     );
   }
 
-  // Join screen
+  // Join screen (reachable only from the first-run choice screen)
   if (mode === 'join') {
     return (
       <div className="setup-page">
@@ -227,7 +194,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
     );
   }
 
-  // Create trip screen
+  // Step 1: trip details
   if (mode === 'create') {
     return (
       <div className="setup-page">
@@ -238,7 +205,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
             <input
               type="text"
               className="setup-input"
-              placeholder="e.g., greece2026"
+              placeholder="e.g., italy2027"
               value={newTripCode}
               onChange={(e) => setNewTripCode(e.target.value)}
             />
@@ -249,12 +216,101 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
             <input
               type="text"
               className="setup-input"
+              placeholder={isHe ? 'למשל: איטליה 2027' : 'e.g., Italy 2027'}
               value={tripName}
               onChange={(e) => setTripName(e.target.value)}
             />
           </label>
 
-          <h3>{isHe ? 'בני המשפחה' : 'Family Members'}</h3>
+          <label className="setup-label">
+            {isHe ? 'יעד (אנגלית)' : 'Destination (English)'}
+            <input
+              type="text"
+              className="setup-input"
+              placeholder="e.g., Italy"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'יעד (עברית)' : 'Destination (Hebrew)'}
+            <input
+              type="text"
+              className="setup-input"
+              dir="rtl"
+              placeholder="למשל: איטליה"
+              value={destinationHe}
+              onChange={(e) => setDestinationHe(e.target.value)}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'אימוג׳י דגל' : 'Flag Emoji'}
+            <input
+              type="text"
+              className="setup-input"
+              value={flagEmoji}
+              onChange={(e) => setFlagEmoji(e.target.value)}
+              style={{ width: '80px' }}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'תאריך התחלה' : 'Start Date'}
+            <input
+              type="date"
+              className="setup-input"
+              required
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'תאריך סיום' : 'End Date'}
+            <input
+              type="date"
+              className="setup-input"
+              required
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </label>
+
+          {!dateOrderValid && (
+            <p className="setup-error">
+              <AlertCircle size={16} />{' '}
+              {isHe
+                ? 'תאריך הסיום חייב להיות אחרי תאריך ההתחלה'
+                : 'End date must be on or after the start date'}
+            </p>
+          )}
+
+          <button
+            className="setup-btn primary"
+            onClick={() => setMode('members')}
+            disabled={!detailsValid}
+          >
+            {isHe ? 'הבא' : 'Next'}
+          </button>
+          <button
+            className="setup-btn secondary"
+            onClick={() => (inApp ? navigate('/') : setMode('choice'))}
+          >
+            {t('common.back')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 2: family members
+  if (mode === 'members') {
+    return (
+      <div className="setup-page">
+        <h2>{isHe ? 'בני המשפחה' : 'Family Members'}</h2>
+        <div className="setup-form">
           {members.map((m, i) => (
             <div key={i} className="member-row">
               <input
@@ -301,6 +357,14 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
                 <option value="phone">📱</option>
                 <option value="tablet">📱 Tablet</option>
               </select>
+              <button
+                className="setup-btn text"
+                onClick={() => setMembers(members.filter((_, idx) => idx !== i))}
+                aria-label={isHe ? 'הסר בן משפחה' : 'Remove member'}
+                style={{ padding: '4px' }}
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
           <button
@@ -312,17 +376,33 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
             <Plus size={16} /> {isHe ? 'הוסף בן משפחה' : 'Add Member'}
           </button>
 
-          {parseError && <p className="setup-error"><AlertCircle size={16} /> {parseError}</p>}
+          <label
+            className="setup-label"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}
+          >
+            <input
+              type="checkbox"
+              checked={makeActive}
+              onChange={(e) => setMakeActive(e.target.checked)}
+            />
+            {isHe ? 'הפוך לטיול הפעיל של המשפחה' : "Set as the family's active trip"}
+          </label>
+
+          {createError && (
+            <p className="setup-error">
+              <AlertCircle size={16} /> {createError}
+            </p>
+          )}
 
           <button
             className="setup-btn primary"
             onClick={handleCreateTrip}
-            disabled={creating || !newTripCode.trim()}
+            disabled={creating || !detailsValid}
           >
             {creating ? <Loader size={16} className="spin" /> : null}
             {t('setup.createTrip')}
           </button>
-          <button className="setup-btn secondary" onClick={() => setMode('choice')}>
+          <button className="setup-btn secondary" onClick={() => setMode('create')}>
             {t('common.back')}
           </button>
         </div>
@@ -330,91 +410,18 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
     );
   }
 
-  // Upload screen (after trip created)
+  // Step 3: import bookings into the freshly created trip
   if (mode === 'upload') {
     return (
       <div className="setup-page">
         <h2>{t('setup.uploadTitle')}</h2>
         <p className="setup-description">{t('setup.uploadDescription')}</p>
-
-        <div className="setup-form">
-          <label className="setup-label">
-            Claude API Key
-            <input
-              type="password"
-              className="setup-input"
-              placeholder="sk-ant-..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </label>
-
-          <div
-            className="upload-zone"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload size={40} />
-            <p>{t('setup.selectFiles')}</p>
-            {files.length > 0 && (
-              <div className="file-list">
-                {files.map((f, i) => (
-                  <div key={i} className="file-item">
-                    <FileText size={16} />
-                    <span>{f.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf"
-            multiple
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-          />
-
-          {parsing && (
-            <div className="parsing-status">
-              <Loader size={20} className="spin" />
-              <span>{t('setup.parsing')}</span>
-            </div>
-          )}
-
-          {parsedData && (
-            <div className="parsed-preview">
-              <div className="parsed-header">
-                <Check size={20} /> {t('setup.parsed')}
-              </div>
-              <textarea
-                className="parsed-json"
-                value={parsedData}
-                onChange={(e) => setParsedData(e.target.value)}
-                rows={10}
-              />
-              <button className="setup-btn primary" onClick={handleSaveParsed}>
-                {t('setup.save')}
-              </button>
-            </div>
-          )}
-
-          {parseError && <p className="setup-error"><AlertCircle size={16} /> {parseError}</p>}
-
-          {!parsedData && (
-            <button
-              className="setup-btn primary"
-              onClick={handleParse}
-              disabled={parsing || !files.length}
-            >
-              {t('setup.review')}
-            </button>
-          )}
-
-          <button className="setup-btn secondary" onClick={() => navigate('/')}>
-            {isHe ? 'דלג והמשך' : 'Skip & Continue'}
-          </button>
-        </div>
+        <BookingImport
+          tripCode={createdCode}
+          startDate={startDate}
+          endDate={endDate}
+          onDone={() => navigate('/')}
+        />
       </div>
     );
   }

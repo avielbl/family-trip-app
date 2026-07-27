@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, HelpCircle, Sparkles, Loader2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig } from '../firebase/tripService';
-import type { FamilyMember } from '../types/trip';
+import { saveTripConfig, saveQuizQuestion, deleteQuizQuestion } from '../firebase/tripService';
+import { generateText, hasAiKey, stripJsonFences } from '../ai';
+import { GREECE_QUIZ_SEED } from '../data/greeceQuizSeed';
+import type { FamilyMember, QuizQuestion } from '../types/trip';
 
 export default function AdminPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { config, tripCode, isAdmin } = useTripContext();
+  const { config, tripCode, isAdmin, quizQuestions, totalDays } = useTripContext();
   const { firebaseUser } = useAuthContext();
   const isHe = i18n.language === 'he';
 
@@ -23,6 +25,9 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [claimMsg, setClaimMsg] = useState('');
+  const [quizBusy, setQuizBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [quizError, setQuizError] = useState('');
 
   const inviteUrl = tripCode
     ? `${window.location.origin}/join/${tripCode}`
@@ -66,10 +71,62 @@ export default function AdminPage() {
       await saveTripConfig({ ...config, familyMembers: members });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSeedQuiz() {
+    if (!tripCode || quizBusy) return;
+    setQuizBusy(true);
+    setQuizError('');
+    try {
+      for (const q of GREECE_QUIZ_SEED) {
+        await saveQuizQuestion(tripCode, q);
+      }
+    } catch (e) {
+      setQuizError((e as Error).message);
+    } finally {
+      setQuizBusy(false);
+    }
+  }
+
+  async function handleDeleteQuestion(id: string) {
+    if (!tripCode) return;
+    setQuizError('');
+    try {
+      await deleteQuizQuestion(tripCode, id);
+    } catch (e) {
+      setQuizError((e as Error).message);
+    }
+  }
+
+  async function handleGenerateQuiz() {
+    if (!tripCode || generating || !hasAiKey()) return;
+    setGenerating(true);
+    setQuizError('');
+    try {
+      const destination = config?.destination ?? config?.tripName ?? '';
+      const prompt = `Create EXACTLY ${totalDays} kid-friendly multiple-choice quiz questions about ${destination} for a family trip.
+One question per day: dayIndex 0 to ${totalDays - 1}, ids "q1" to "q${totalDays}".
+Each question must be bilingual (English + Hebrew) with 4 options and a fun fact.
+Return a JSON array where each item matches exactly this shape:
+{"id":"q1","dayIndex":0,"question":"","questionHe":"","options":["","","",""],"optionsHe":["","","",""],"correctIndex":0,"funFact":"","funFactHe":""}
+Return ONLY valid JSON, no markdown.`;
+      const raw = await generateText(prompt, 8192);
+      const parsed = JSON.parse(stripJsonFences(raw)) as QuizQuestion[];
+      if (!Array.isArray(parsed)) {
+        throw new Error(isHe ? 'תשובת ה-AI אינה מערך תקין' : 'AI response is not a valid array');
+      }
+      for (const q of parsed) {
+        await saveQuizQuestion(tripCode, q);
+      }
+    } catch (e) {
+      setQuizError((e as Error).message);
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -214,6 +271,59 @@ export default function AdminPage() {
         {error && (
           <p style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--red-500)', fontSize: '13px', marginTop: '8px' }}>
             <AlertCircle size={14} /> {error}
+          </p>
+        )}
+      </div>
+
+      {/* Quiz Questions */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <HelpCircle size={16} />
+          {isHe ? 'שאלות חידון' : 'Quiz Questions'} ({quizQuestions.length})
+        </div>
+
+        {[...quizQuestions]
+          .sort((a, b) => a.dayIndex - b.dayIndex)
+          .map((q) => (
+            <div key={q.id} className="admin-member-row">
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', minWidth: '48px' }}>
+                {t('common.day')} {q.dayIndex + 1}
+              </span>
+              <span style={{ flex: 1, fontSize: '13px' }}>
+                {isHe ? q.questionHe : q.question}
+              </span>
+              <button
+                className="admin-icon-btn delete"
+                onClick={() => handleDeleteQuestion(q.id)}
+                title={t('common.delete')}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+          {quizQuestions.length === 0 && (
+            <button className="admin-btn secondary" onClick={handleSeedQuiz} disabled={quizBusy}>
+              <Plus size={14} />
+              {isHe ? 'טען שאלות יוון' : 'Seed Greece questions'}
+            </button>
+          )}
+          <button
+            className="admin-btn primary"
+            onClick={handleGenerateQuiz}
+            disabled={!hasAiKey() || generating}
+          >
+            {generating ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+            {generating
+              ? (isHe ? 'מייצר...' : 'Generating...')
+              : (isHe ? 'ייצר עם AI' : 'Generate with AI')}
+          </button>
+        </div>
+
+        {quizError && (
+          <p style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--red-500)', fontSize: '13px', marginTop: '8px' }}>
+            <AlertCircle size={14} /> {quizError}
           </p>
         )}
       </div>
