@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, HelpCircle, Sparkles, Loader2 } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, HelpCircle, Sparkles, Loader2, FileUp } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useFamilyContext } from '../context/FamilyContext';
@@ -206,6 +206,23 @@ Return ONLY valid JSON, no markdown.`;
           {claimMsg && <p style={{ color: 'var(--green-600)', marginTop: '8px', fontSize: '13px' }}>{claimMsg}</p>}
         </div>
       )}
+
+      {/* Booking import — screenshots/PDFs of flights, hotels, etc. */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <FileUp size={16} />
+          {isHe ? 'ייבוא הזמנות' : 'Import Bookings'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          {isHe
+            ? 'העלאת צילומי מסך או קבצי PDF של טיסות, מלונות והזמנות — והוספתם לטיול אוטומטית'
+            : 'Upload screenshots or PDFs of flights, hotels and bookings — added to the trip automatically'}
+        </p>
+        <button className="admin-btn primary" onClick={() => navigate('/import')}>
+          <FileUp size={14} />
+          {isHe ? 'לייבוא הזמנות' : 'Open Import'}
+        </button>
+      </div>
 
       {/* Invite Link */}
       <div className="admin-section">
