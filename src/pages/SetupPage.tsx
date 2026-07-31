@@ -292,7 +292,15 @@ export default function SetupPage() {
         </div>
 
         <p className="setup-build-stamp">
-          {isHe ? 'גרסה' : 'Build'}: {__BUILD_TIME__.slice(0, 16).replace('T', ' ')} UTC
+          {isHe ? 'גרסה' : 'Version'} {__APP_VERSION__} ·{' '}
+          {new Intl.DateTimeFormat(isHe ? 'he-IL' : 'en-GB', {
+            timeZone: 'Asia/Jerusalem',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(new Date(__BUILD_TIME__))}
         </p>
       </div>
     );
