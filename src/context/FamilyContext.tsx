@@ -29,6 +29,7 @@ interface FamilyContextType {
   familyId: string | null;
   familyLoading: boolean;
   recoveryError: string | null;
+  recoveryDiag: string | null;
   trips: TripSummary[];
   refreshTrips: () => Promise<void>;
   isFamilyAdmin: boolean;
@@ -60,6 +61,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [familyLoading, setFamilyLoading] = useState(true);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryDiag, setRecoveryDiag] = useState<string | null>(null);
 
   // Persist a resolved familyId locally and (best-effort) onto the user profile.
   const adoptFamilyId = useCallback(
@@ -122,8 +124,9 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         // references the user, fall back to scanning trips (covers legacy
         // trips that were never migrated into a family).
         if (firebaseUser) {
+          const diag: string[] = [];
           try {
-            const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email);
+            const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email, diag);
             if (!cancelled && found) {
               adoptFamilyId(found.id);
               finish();
@@ -132,7 +135,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
             const recoveredId = await recoverFromLegacyTrips(
               firebaseUser.uid,
               firebaseUser.email,
-              isBootstrapAdminEmail(firebaseUser.email)
+              isBootstrapAdminEmail(firebaseUser.email),
+              diag
             );
             if (!cancelled && recoveredId) {
               adoptFamilyId(recoveredId);
@@ -142,6 +146,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
             const e = err as { code?: string; message?: string };
             if (!cancelled) setRecoveryError(e.code ?? e.message ?? 'lookup failed');
           }
+          if (!cancelled) setRecoveryDiag(diag.join(' · ') || null);
         }
         finish();
         return;
@@ -311,6 +316,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         familyId,
         familyLoading,
         recoveryError,
+        recoveryDiag,
         trips,
         refreshTrips,
         isFamilyAdmin,
