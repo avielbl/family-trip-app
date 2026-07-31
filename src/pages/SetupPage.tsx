@@ -262,9 +262,13 @@ export default function SetupPage() {
           ) : (
             <>
               <p className="setup-description" style={{ textAlign: 'center' }}>
-                {isHe
-                  ? `מחובר/ת כ־${firebaseUser.email} — לא נמצאה משפחה קיימת`
-                  : `Signed in as ${firebaseUser.email} — no existing family found`}
+                {family
+                  ? isHe
+                    ? `מחובר/ת כ־${firebaseUser.email} — המשפחה נמצאה אך אין בה טיולים עדיין`
+                    : `Signed in as ${firebaseUser.email} — family found, but it has no trips yet`
+                  : isHe
+                    ? `מחובר/ת כ־${firebaseUser.email} — לא נמצאה משפחה קיימת`
+                    : `Signed in as ${firebaseUser.email} — no existing family found`}
               </p>
               {recoveryError && (
                 <p className="setup-error" style={{ justifyContent: 'center' }}>
@@ -276,6 +280,8 @@ export default function SetupPage() {
                 {[
                   `local=${familyId ?? '-'}`,
                   `family=${family ? 'loaded' : '-'}`,
+                  family ? `familyTrips=${family.tripCodes?.length ?? 0}` : null,
+                  family ? `active=${family.activeTripCode ?? '-'}` : null,
                   recoveryDiag,
                 ]
                   .filter(Boolean)

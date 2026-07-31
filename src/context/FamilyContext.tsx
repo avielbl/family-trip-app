@@ -103,12 +103,18 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
       // 1. Already resolved on this device — trust it only after verifying
       // the family still exists (signed-in users can check server-side).
+      // A family that exists but owns no trips is kept only as a last resort —
+      // recovery may find the user's real (trip-bearing) family elsewhere.
+      let fallbackFamilyId: string | null = null;
+
       const stored = localStorage.getItem('familyId');
       if (stored) {
         let storedOk = true;
+        let storedFam: Family | null = null;
         if (firebaseUser) {
           try {
-            storedOk = (await getFamily(stored)) !== null;
+            storedFam = await getFamily(stored);
+            storedOk = storedFam !== null;
           } catch (err) {
             const e = err as { code?: string };
             // Permission failure means the pointer is unusable right now —
@@ -124,7 +130,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           }
         }
         if (cancelled) return;
-        if (storedOk) {
+        const storedEmpty = storedFam !== null && (storedFam.tripCodes?.length ?? 0) === 0;
+        if (storedOk && !storedEmpty) {
           if (familyId !== stored) setFamilyIdState(stored);
           // Best-effort profile sync for users who signed in after resolution
           if (firebaseUser && userProfile && userProfile.familyId !== stored) {
@@ -135,7 +142,10 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           finish();
           return;
         }
-        if (!diag.some((d) => d.startsWith('stored-denied'))) {
+        if (storedEmpty) {
+          diag.push(`stored-empty=${stored}`);
+          fallbackFamilyId = stored;
+        } else if (!diag.some((d) => d.startsWith('stored-denied'))) {
           diag.push(`stale-local=${stored}`);
           localStorage.removeItem('familyId');
         }
@@ -226,10 +236,14 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         try {
           const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email, diag);
-          if (!cancelled && found) {
+          if (!cancelled && found && (found.tripCodes?.length ?? 0) > 0) {
             adoptFamilyId(found.id);
             finish();
             return;
+          }
+          if (found) {
+            diag.push(`found-empty=${found.id}`);
+            fallbackFamilyId = fallbackFamilyId ?? found.id;
           }
           const recoveredId = await recoverFromLegacyTrips(
             firebaseUser.uid,
@@ -248,6 +262,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           if (!cancelled) setRecoveryError(e.code ?? e.message ?? 'lookup failed');
         }
       }
+      // Nothing better found — a trip-less family beats no family.
+      if (!cancelled && fallbackFamilyId) adoptFamilyId(fallbackFamilyId);
       if (!cancelled) setRecoveryDiag(diag.join(' · ') || 'no-pointers');
       finish();
     };
