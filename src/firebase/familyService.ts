@@ -70,11 +70,13 @@ export async function createFamily(data: {
  */
 export async function findFamilyForUser(
   uid: string,
-  email: string | null | undefined
+  email: string | null | undefined,
+  diag?: string[]
 ): Promise<Family | null> {
   const byAdmin = await getDocs(
     query(collection(db, 'families'), where('adminUids', 'array-contains', uid), limit(1))
   );
+  diag?.push(`admin=${byAdmin.size}`);
   if (!byAdmin.empty) return byAdmin.docs[0].data() as Family;
 
   const normalized = email?.trim().toLowerCase();
@@ -86,6 +88,7 @@ export async function findFamilyForUser(
         limit(1)
       )
     );
+    diag?.push(`email=${byEmail.size}`);
     if (!byEmail.empty) return byEmail.docs[0].data() as Family;
   }
   return null;
@@ -177,10 +180,13 @@ export async function getTripSummaries(tripCodes: string[]): Promise<TripSummary
 export async function recoverFromLegacyTrips(
   uid: string,
   email: string | null | undefined,
-  isBootstrapAdmin: boolean
+  isBootstrapAdmin: boolean,
+  diag?: string[]
 ): Promise<string | null> {
   const snap = await getDocs(query(collection(db, 'trips'), limit(25)));
-  const trips = snap.docs.map((d) => d.data() as TripConfig);
+  // Doc ID is the canonical trip code — legacy docs may lack the field.
+  const trips = snap.docs.map((d) => ({ ...(d.data() as TripConfig), tripCode: d.id }));
+  diag?.push(`trips=${trips.length}`);
   const normalized = email?.trim().toLowerCase();
 
   const isMember = (trip: TripConfig) =>
@@ -191,14 +197,24 @@ export async function recoverFromLegacyTrips(
       ));
 
   let candidates = trips.filter(isMember);
+  diag?.push(`member-of=${candidates.length}`);
   if (candidates.length === 0 && isBootstrapAdmin) candidates = trips;
 
   const withFamily = candidates.find((t) => t.familyId);
   if (withFamily) return withFamily.familyId!;
 
   for (const legacy of candidates) {
-    const migratedId = await migrateLegacyTripToFamily(legacy, uid, isBootstrapAdmin);
-    if (migratedId) return migratedId;
+    try {
+      const migratedId = await migrateLegacyTripToFamily(legacy, uid, isBootstrapAdmin);
+      if (migratedId) {
+        diag?.push(`migrated=${legacy.tripCode}`);
+        return migratedId;
+      }
+      diag?.push(`skip=${legacy.tripCode}`);
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      diag?.push(`migrate ${legacy.tripCode}: ${e.code ?? e.message}`);
+    }
   }
   return null;
 }

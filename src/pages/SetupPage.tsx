@@ -65,7 +65,8 @@ export default function SetupPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setTripCode, tripCode, browseTrip } = useTripContext();
-  const { family, familyId, familyLoading, recoveryError, registerTrip } = useFamilyContext();
+  const { family, familyId, familyLoading, recoveryError, recoveryDiag, registerTrip } =
+    useFamilyContext();
   const { firebaseUser, authLoading, authError, signInWithGoogle, signOutUser } = useAuthContext();
 
   const isHe = i18n.language === 'he';
@@ -269,6 +270,11 @@ export default function SetupPage() {
                 <p className="setup-error" style={{ justifyContent: 'center' }}>
                   <AlertCircle size={16} />{' '}
                   {isHe ? `שגיאת שחזור: ${recoveryError}` : `Recovery error: ${recoveryError}`}
+                </p>
+              )}
+              {recoveryDiag && (
+                <p className="setup-build-stamp" style={{ marginTop: 0, direction: 'ltr' }}>
+                  {recoveryDiag}
                 </p>
               )}
               <button
