@@ -166,6 +166,44 @@ export async function getTripSummaries(tripCodes: string[]): Promise<TripSummary
 }
 
 /**
+ * Last-resort sign-in recovery: scan the trips collection (tiny for a family
+ * app) for a trip this user belongs to, when no family document references
+ * them — e.g. app data was cleared before the legacy trip was ever migrated
+ * into a family. Matches by trip adminUid or member email; the bootstrap
+ * admin may also claim legacy trips that predate adminUid stamping.
+ * Returns the trip's familyId, migrating the legacy trip into a fresh family
+ * when this user is allowed to.
+ */
+export async function recoverFromLegacyTrips(
+  uid: string,
+  email: string | null | undefined,
+  isBootstrapAdmin: boolean
+): Promise<string | null> {
+  const snap = await getDocs(query(collection(db, 'trips'), limit(25)));
+  const trips = snap.docs.map((d) => d.data() as TripConfig);
+  const normalized = email?.trim().toLowerCase();
+
+  const isMember = (trip: TripConfig) =>
+    trip.adminUid === uid ||
+    (!!normalized &&
+      (trip.familyMembers ?? []).some(
+        (m) => m.email?.trim().toLowerCase() === normalized
+      ));
+
+  let candidates = trips.filter(isMember);
+  if (candidates.length === 0 && isBootstrapAdmin) candidates = trips;
+
+  const withFamily = candidates.find((t) => t.familyId);
+  if (withFamily) return withFamily.familyId!;
+
+  for (const legacy of candidates) {
+    const migratedId = await migrateLegacyTripToFamily(legacy, uid, isBootstrapAdmin);
+    if (migratedId) return migratedId;
+  }
+  return null;
+}
+
+/**
  * Lazy, idempotent migration for a legacy single-trip install: wraps the
  * existing trip into a new family document and stamps `familyId` onto the
  * trip. Only the device whose user may write the trip config (the trip admin,
