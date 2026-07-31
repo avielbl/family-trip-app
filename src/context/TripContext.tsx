@@ -90,8 +90,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     () => localStorage.getItem(LEGACY_TRIP_KEY)
   );
 
-  // tripCode is derived: device override → family active trip → legacy pointer.
-  const tripCode = overrideCode ?? family?.activeTripCode ?? legacyCode ?? null;
+  // tripCode is derived: device override → family active trip → newest family
+  // trip (a family with trips but no active pointer must never strand the
+  // user on the setup screen) → legacy pointer.
+  const newestFamilyTrip = family?.tripCodes?.length
+    ? family.tripCodes[family.tripCodes.length - 1]
+    : null;
+  const tripCode = overrideCode ?? family?.activeTripCode ?? newestFamilyTrip ?? legacyCode ?? null;
 
   const [config, setConfig] = useState<TripConfig | null>(null);
   const [currentMemberState, setCurrentMemberState] = useState<FamilyMember | null>(null);

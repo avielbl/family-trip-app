@@ -81,11 +81,16 @@ export async function findFamilyForUser(
   email: string | null | undefined,
   diag?: string[]
 ): Promise<Family | null> {
+  // Prefer a family that actually owns trips over an empty shell (e.g. one
+  // left behind by an abandoned trip-creation attempt).
+  const pick = (fams: Family[]) =>
+    fams.find((f) => (f.tripCodes?.length ?? 0) > 0) ?? fams[0] ?? null;
+
   const byAdmin = await getDocs(
-    query(collection(db, 'families'), where('adminUids', 'array-contains', uid), limit(1))
+    query(collection(db, 'families'), where('adminUids', 'array-contains', uid), limit(10))
   );
   diag?.push(`admin=${byAdmin.size}`);
-  if (!byAdmin.empty) return byAdmin.docs[0].data() as Family;
+  if (!byAdmin.empty) return pick(byAdmin.docs.map((d) => d.data() as Family));
 
   const normalized = email?.trim().toLowerCase();
   if (normalized) {
@@ -93,11 +98,11 @@ export async function findFamilyForUser(
       query(
         collection(db, 'families'),
         where('memberEmails', 'array-contains', normalized),
-        limit(1)
+        limit(10)
       )
     );
     diag?.push(`email=${byEmail.size}`);
-    if (!byEmail.empty) return byEmail.docs[0].data() as Family;
+    if (!byEmail.empty) return pick(byEmail.docs.map((d) => d.data() as Family));
   }
   return null;
 }
