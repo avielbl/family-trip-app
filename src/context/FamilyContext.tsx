@@ -109,9 +109,18 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         if (firebaseUser) {
           try {
             storedOk = (await getFamily(stored)) !== null;
-          } catch {
-            // Transient/permission error — don't destroy the pointer.
-            storedOk = true;
+          } catch (err) {
+            const e = err as { code?: string };
+            // Permission failure means the pointer is unusable right now —
+            // fall through to recovery (which will surface the same error
+            // visibly) but keep the pointer in case rules get fixed.
+            if (e.code === 'permission-denied') {
+              storedOk = false;
+              diag.push(`stored-denied=${stored}`);
+            } else {
+              // Transient error — don't destroy the pointer.
+              storedOk = true;
+            }
           }
         }
         if (cancelled) return;
@@ -126,8 +135,10 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           finish();
           return;
         }
-        diag.push(`stale-local=${stored}`);
-        localStorage.removeItem('familyId');
+        if (!diag.some((d) => d.startsWith('stored-denied'))) {
+          diag.push(`stale-local=${stored}`);
+          localStorage.removeItem('familyId');
+        }
       }
 
       // 2. From the signed-in user's profile — verify it too.
@@ -256,7 +267,9 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       setFamily(null);
       return;
     }
-    const unsub = subscribeFamily(familyId, setFamily);
+    const unsub = subscribeFamily(familyId, setFamily, (code) =>
+      setRecoveryError(`family-sub: ${code}`)
+    );
     return unsub;
   }, [familyId]);
 

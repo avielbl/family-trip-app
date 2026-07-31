@@ -272,11 +272,15 @@ export default function SetupPage() {
                   {isHe ? `שגיאת שחזור: ${recoveryError}` : `Recovery error: ${recoveryError}`}
                 </p>
               )}
-              {recoveryDiag && (
-                <p className="setup-build-stamp" style={{ marginTop: 0, direction: 'ltr' }}>
-                  {recoveryDiag}
-                </p>
-              )}
+              <p className="setup-build-stamp" style={{ marginTop: 0, direction: 'ltr' }}>
+                {[
+                  `local=${familyId ?? '-'}`,
+                  `family=${family ? 'loaded' : '-'}`,
+                  recoveryDiag,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
               <button
                 className="setup-btn secondary"
                 onClick={() => signOutUser().catch(() => { /* ignore */ })}

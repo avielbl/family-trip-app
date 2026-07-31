@@ -23,11 +23,19 @@ export async function getFamily(familyId: string): Promise<Family | null> {
 
 export function subscribeFamily(
   familyId: string,
-  callback: (family: Family | null) => void
+  callback: (family: Family | null) => void,
+  onError?: (code: string) => void
 ): Unsubscribe {
-  return onSnapshot(doc(db, 'families', familyId), (snap) => {
-    callback(snap.exists() ? (snap.data() as Family) : null);
-  });
+  return onSnapshot(
+    doc(db, 'families', familyId),
+    (snap) => {
+      callback(snap.exists() ? (snap.data() as Family) : null);
+    },
+    (err) => {
+      console.warn('Family subscription failed:', err);
+      onError?.(err.code ?? err.message);
+    }
+  );
 }
 
 // Lowercased member emails, denormalized onto the family doc so a signed-in
