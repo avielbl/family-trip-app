@@ -13,6 +13,7 @@ import {
   subscribeFamily,
   createFamily,
   findFamilyForUser,
+  recoverFromLegacyTrips,
   backfillMemberEmails,
   setFamilyActiveTrip,
   addTripToFamily,
@@ -115,12 +116,24 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       const legacyCode = localStorage.getItem('tripCode');
       if (!legacyCode) {
         // 3b. Sign-in recovery (e.g. after clearing app data): look the
-        // family up server-side by admin uid or member email.
+        // family up server-side by admin uid or member email; if no family
+        // references the user, fall back to scanning trips (covers legacy
+        // trips that were never migrated into a family).
         if (firebaseUser) {
           try {
             const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email);
             if (!cancelled && found) {
               adoptFamilyId(found.id);
+              finish();
+              return;
+            }
+            const recoveredId = await recoverFromLegacyTrips(
+              firebaseUser.uid,
+              firebaseUser.email,
+              isBootstrapAdminEmail(firebaseUser.email)
+            );
+            if (!cancelled && recoveredId) {
+              adoptFamilyId(recoveredId);
             }
           } catch (err) {
             console.warn('Family recovery lookup failed:', err);
