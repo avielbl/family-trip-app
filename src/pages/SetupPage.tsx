@@ -76,6 +76,14 @@ export default function SetupPage() {
 
   const [mode, setMode] = useState<WizardMode>(inApp ? 'create' : 'choice');
 
+  // Nothing to set up: a trip is already active (e.g. resolved after this
+  // page mounted, or a stale /setup URL) — go to it.
+  useEffect(() => {
+    if (mode === 'choice' && tripCode) {
+      navigate('/', { replace: true });
+    }
+  }, [mode, tripCode, navigate]);
+
   // Join step
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
