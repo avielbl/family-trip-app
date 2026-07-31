@@ -28,6 +28,7 @@ interface FamilyContextType {
   family: Family | null;
   familyId: string | null;
   familyLoading: boolean;
+  recoveryError: string | null;
   trips: TripSummary[];
   refreshTrips: () => Promise<void>;
   isFamilyAdmin: boolean;
@@ -58,6 +59,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   const [family, setFamily] = useState<Family | null>(null);
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [familyLoading, setFamilyLoading] = useState(true);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   // Persist a resolved familyId locally and (best-effort) onto the user profile.
   const adoptFamilyId = useCallback(
@@ -137,6 +139,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
             }
           } catch (err) {
             console.warn('Family recovery lookup failed:', err);
+            const e = err as { code?: string; message?: string };
+            if (!cancelled) setRecoveryError(e.code ?? e.message ?? 'lookup failed');
           }
         }
         finish();
@@ -306,6 +310,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         family,
         familyId,
         familyLoading,
+        recoveryError,
         trips,
         refreshTrips,
         isFamilyAdmin,

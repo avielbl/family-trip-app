@@ -65,8 +65,8 @@ export default function SetupPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setTripCode, tripCode, browseTrip } = useTripContext();
-  const { family, familyId, familyLoading, registerTrip } = useFamilyContext();
-  const { firebaseUser, authLoading, authError, signInWithGoogle } = useAuthContext();
+  const { family, familyId, familyLoading, recoveryError, registerTrip } = useFamilyContext();
+  const { firebaseUser, authLoading, authError, signInWithGoogle, signOutUser } = useAuthContext();
 
   const isHe = i18n.language === 'he';
   // In-app usage (integrator routes /trips/new here): skip the first-run
@@ -259,11 +259,25 @@ export default function SetupPage() {
               <div className="setup-or">{t('setup.or')}</div>
             </>
           ) : (
-            <p className="setup-description" style={{ textAlign: 'center' }}>
-              {isHe
-                ? `מחובר/ת כ־${firebaseUser.displayName ?? firebaseUser.email} — לא נמצאה משפחה קיימת`
-                : `Signed in as ${firebaseUser.displayName ?? firebaseUser.email} — no existing family found`}
-            </p>
+            <>
+              <p className="setup-description" style={{ textAlign: 'center' }}>
+                {isHe
+                  ? `מחובר/ת כ־${firebaseUser.email} — לא נמצאה משפחה קיימת`
+                  : `Signed in as ${firebaseUser.email} — no existing family found`}
+              </p>
+              {recoveryError && (
+                <p className="setup-error" style={{ justifyContent: 'center' }}>
+                  <AlertCircle size={16} />{' '}
+                  {isHe ? `שגיאת שחזור: ${recoveryError}` : `Recovery error: ${recoveryError}`}
+                </p>
+              )}
+              <button
+                className="setup-btn secondary"
+                onClick={() => signOutUser().catch(() => { /* ignore */ })}
+              >
+                {isHe ? 'התנתק ונסה חשבון אחר' : 'Sign out and try another account'}
+              </button>
+            </>
           )}
 
           <button className="setup-choice-btn primary" onClick={() => setMode('create')}>
