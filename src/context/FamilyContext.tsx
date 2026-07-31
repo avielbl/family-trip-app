@@ -12,6 +12,7 @@ import type { Family, TripConfig, TripSummary } from '../types/trip';
 import {
   subscribeFamily,
   createFamily,
+  getFamily,
   findFamilyForUser,
   recoverFromLegacyTrips,
   backfillMemberEmails,
@@ -95,117 +96,149 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     };
 
     const resolve = async () => {
-      // 1. Already resolved on this device
+      // Every step falls through (recording why) instead of dead-ending, so a
+      // stale local pointer can never mask server-side recovery. The trail is
+      // shown on the setup screen when resolution comes up empty.
+      const diag: string[] = [];
+
+      // 1. Already resolved on this device — trust it only after verifying
+      // the family still exists (signed-in users can check server-side).
       const stored = localStorage.getItem('familyId');
       if (stored) {
-        if (!cancelled && familyId !== stored) setFamilyIdState(stored);
-        // Best-effort profile sync for users who signed in after resolution
-        if (firebaseUser && userProfile && userProfile.familyId !== stored) {
-          updateDoc(doc(db, 'users', firebaseUser.uid), { familyId: stored }).catch(() => {
-            /* best-effort */
-          });
-        }
-        finish();
-        return;
-      }
-
-      // 2. From the signed-in user's profile
-      if (userProfile?.familyId) {
-        if (!cancelled) adoptFamilyId(userProfile.familyId);
-        finish();
-        return;
-      }
-
-      // 3. Legacy single-trip pointer
-      const legacyCode = localStorage.getItem('tripCode');
-      if (!legacyCode) {
-        // 3b. Sign-in recovery (e.g. after clearing app data): look the
-        // family up server-side by admin uid or member email; if no family
-        // references the user, fall back to scanning trips (covers legacy
-        // trips that were never migrated into a family).
+        let storedOk = true;
         if (firebaseUser) {
-          const diag: string[] = [];
           try {
-            const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email, diag);
-            if (!cancelled && found) {
-              adoptFamilyId(found.id);
-              finish();
-              return;
-            }
-            const recoveredId = await recoverFromLegacyTrips(
-              firebaseUser.uid,
-              firebaseUser.email,
-              isBootstrapAdminEmail(firebaseUser.email),
-              diag
-            );
-            if (!cancelled && recoveredId) {
-              adoptFamilyId(recoveredId);
-            }
-          } catch (err) {
-            console.warn('Family recovery lookup failed:', err);
-            const e = err as { code?: string; message?: string };
-            if (!cancelled) setRecoveryError(e.code ?? e.message ?? 'lookup failed');
+            storedOk = (await getFamily(stored)) !== null;
+          } catch {
+            // Transient/permission error — don't destroy the pointer.
+            storedOk = true;
           }
-          if (!cancelled) setRecoveryDiag(diag.join(' · ') || null);
         }
-        finish();
-        return;
-      }
-
-      try {
-        const trip = await getTripConfig(legacyCode);
         if (cancelled) return;
-
-        if (trip?.familyId) {
-          adoptFamilyId(trip.familyId);
+        if (storedOk) {
+          if (familyId !== stored) setFamilyIdState(stored);
+          // Best-effort profile sync for users who signed in after resolution
+          if (firebaseUser && userProfile && userProfile.familyId !== stored) {
+            updateDoc(doc(db, 'users', firebaseUser.uid), { familyId: stored }).catch(() => {
+              /* best-effort */
+            });
+          }
           finish();
           return;
         }
+        diag.push(`stale-local=${stored}`);
+        localStorage.removeItem('familyId');
+      }
 
-        if (trip && firebaseUser) {
-          const bootstrap = isBootstrapAdminEmail(firebaseUser.email);
-          const canMigrate =
-            trip.adminUid === firebaseUser.uid || (!trip.adminUid && bootstrap);
+      // 2. From the signed-in user's profile — verify it too.
+      if (userProfile?.familyId) {
+        try {
+          if ((await getFamily(userProfile.familyId)) !== null) {
+            if (!cancelled) adoptFamilyId(userProfile.familyId);
+            finish();
+            return;
+          }
+          diag.push(`stale-profile=${userProfile.familyId}`);
+        } catch {
+          diag.push(`profile-check-failed=${userProfile.familyId}`);
+        }
+        if (cancelled) return;
+      }
 
-          if (canMigrate) {
-            const migratedId = await migrateLegacyTripToFamily(
-              trip,
-              firebaseUser.uid,
-              bootstrap
-            );
-            if (cancelled) return;
-            if (migratedId) {
-              adoptFamilyId(migratedId);
-              finish();
-              return;
-            }
+      // 3. Legacy single-trip pointer → adopt its family or migrate it.
+      const legacyCode = localStorage.getItem('tripCode');
+      if (legacyCode) {
+        try {
+          const trip = await getTripConfig(legacyCode);
+          if (cancelled) return;
+
+          if (trip?.familyId) {
+            adoptFamilyId(trip.familyId);
+            finish();
+            return;
           }
 
-          // This device can't migrate — wait for the admin device to do it
-          // and pick up trip.familyId when it appears.
-          finish();
-          pollTimer = setInterval(() => {
-            getTripConfig(legacyCode)
-              .then((t) => {
-                if (t?.familyId && !cancelled) {
-                  if (pollTimer) clearInterval(pollTimer);
-                  adoptFamilyId(t.familyId);
-                }
-              })
-              .catch(() => {
-                /* keep polling */
-              });
-          }, LEGACY_MIGRATION_POLL_MS);
-          return;
-        }
+          if (!trip) {
+            diag.push(`legacy-trip-missing=${legacyCode}`);
+          } else if (firebaseUser) {
+            const bootstrap = isBootstrapAdminEmail(firebaseUser.email);
+            const canMigrate =
+              trip.adminUid === firebaseUser.uid || (!trip.adminUid && bootstrap);
 
-        // Anonymous user with a legacy tripCode (or missing trip doc):
-        // no family — TripContext falls back to the legacy code.
-        finish();
-      } catch (err) {
-        console.error('Family resolution failed:', err);
-        finish();
+            if (canMigrate) {
+              const migratedId = await migrateLegacyTripToFamily(
+                trip,
+                firebaseUser.uid,
+                bootstrap
+              );
+              if (cancelled) return;
+              if (migratedId) {
+                adoptFamilyId(migratedId);
+                finish();
+                return;
+              }
+            }
+
+            // This device can't migrate — wait for the admin device to do it
+            // and pick up trip.familyId when it appears.
+            finish();
+            pollTimer = setInterval(() => {
+              getTripConfig(legacyCode)
+                .then((t) => {
+                  if (t?.familyId && !cancelled) {
+                    if (pollTimer) clearInterval(pollTimer);
+                    adoptFamilyId(t.familyId);
+                  }
+                })
+                .catch(() => {
+                  /* keep polling */
+                });
+            }, LEGACY_MIGRATION_POLL_MS);
+            return;
+          } else {
+            // Anonymous user with a legacy tripCode: no family —
+            // TripContext falls back to the legacy code.
+            finish();
+            return;
+          }
+        } catch (err) {
+          console.error('Legacy trip resolution failed:', err);
+          const e = err as { code?: string; message?: string };
+          diag.push(`legacy=${e.code ?? e.message}`);
+        }
       }
+
+      // 4. Sign-in recovery (e.g. after clearing app data): look the family
+      // up server-side by admin uid or member email; if no family references
+      // the user, fall back to scanning trips (covers legacy trips that were
+      // never migrated into a family).
+      if (firebaseUser) {
+        try {
+          const found = await findFamilyForUser(firebaseUser.uid, firebaseUser.email, diag);
+          if (!cancelled && found) {
+            adoptFamilyId(found.id);
+            finish();
+            return;
+          }
+          const recoveredId = await recoverFromLegacyTrips(
+            firebaseUser.uid,
+            firebaseUser.email,
+            isBootstrapAdminEmail(firebaseUser.email),
+            diag
+          );
+          if (!cancelled && recoveredId) {
+            adoptFamilyId(recoveredId);
+            finish();
+            return;
+          }
+        } catch (err) {
+          console.warn('Family recovery lookup failed:', err);
+          const e = err as { code?: string; message?: string };
+          if (!cancelled) setRecoveryError(e.code ?? e.message ?? 'lookup failed');
+        }
+      }
+      if (!cancelled) setRecoveryDiag(diag.join(' · ') || 'no-pointers');
+      finish();
     };
 
     void resolve();
