@@ -298,6 +298,7 @@ export default function SetupPage() {
         </div>
 
         <p className="setup-build-stamp">
+          {import.meta.env.VITE_FIREBASE_PROJECT_ID || 'no-project'} ·{' '}
           {isHe ? 'גרסה' : 'Version'} {__APP_VERSION__} ·{' '}
           {new Intl.DateTimeFormat(isHe ? 'he-IL' : 'en-GB', {
             timeZone: 'Asia/Jerusalem',
