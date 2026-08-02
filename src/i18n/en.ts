@@ -17,6 +17,7 @@ export default {
     quiz: 'Quiz',
     settings: 'Settings',
     setup: 'Setup',
+    notes: 'Notes',
     travelLog: 'Travel Log',
     admin: 'Admin',
     weather: 'Weather',

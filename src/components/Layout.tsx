@@ -24,6 +24,7 @@ import {
   MessageCircle,
   Luggage,
   ChevronDown,
+  StickyNote,
 } from 'lucide-react';
 import { useState, useEffect, type ComponentType } from 'react';
 import { useTripContext } from '../context/TripContext';
@@ -52,6 +53,7 @@ const baseNavItems: NavItem[] = [
   { path: '/quiz', icon: HelpCircle, labelKey: 'nav.quiz' },
   { path: '/packing', icon: CheckSquare, labelKey: 'nav.packing' },
   { path: '/travel-log', icon: BookOpen, labelKey: 'nav.travelLog' },
+  { path: '/notes', icon: StickyNote, labelKey: 'nav.notes' },
   { path: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
 
@@ -61,6 +63,13 @@ export default function Layout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+
+  // Other pages can open the chat with a prepared prompt (tripit:chat-prompt).
+  useEffect(() => {
+    const openChat = () => setChatOpen(true);
+    window.addEventListener('tripit:chat-prompt', openChat);
+    return () => window.removeEventListener('tripit:chat-prompt', openChat);
+  }, []);
   const isRTL = i18n.language === 'he';
   const isHe = i18n.language === 'he';
   const { isAdmin, config, isViewingActiveTrip, returnToActiveTrip } = useTripContext();

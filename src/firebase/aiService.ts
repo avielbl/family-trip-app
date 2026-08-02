@@ -1,5 +1,5 @@
 import type { AIConfig, ImportTarget, AIImportResult, AISuggestion } from '../types/ai';
-import type { Hotel, DrivingSegment, TripDay, Highlight, Restaurant } from '../types/trip';
+import type { Hotel, DrivingSegment, TripDay, Highlight, Restaurant, TripNote } from '../types/trip';
 
 const AI_CONFIG_KEY = 'aiConfig';
 
@@ -350,6 +350,7 @@ export function extractSuggestions(
 export interface ChatContext {
   destination?: string;
   familySize?: number;
+  notes?: TripNote[];
   hotels: Hotel[];
   days: TripDay[];
   highlights: Highlight[];
@@ -372,6 +373,13 @@ export function buildChatSystemPrompt(ctx: ChatContext): string {
     : '  (no days configured yet)';
 
   // Exclude sensitive: confirmationCode, wifiPassword, phone
+  const notesLines = ctx.notes?.length
+    ? ctx.notes
+        .filter((n) => n.status === 'open')
+        .map((n) => `  - [${n.category}${n.relatedName ? `: ${n.relatedName}` : ''}] ${n.text}${n.createdByName ? ` (by ${n.createdByName})` : ''}`)
+        .join('\n') || '  (none)'
+    : '  (none)';
+
   const hotelLines = ctx.hotels.length
     ? ctx.hotels
         .map((h) => `  - ${h.name}, ${h.city} (check-in: ${h.checkIn?.slice(0, 10)}, check-out: ${h.checkOut?.slice(0, 10)})`)
@@ -413,6 +421,9 @@ OUTPUT FORMAT — CRITICAL:
 - A correct reply: "The Acropolis is Athens' top attraction, perfect for kids..."
 - A WRONG reply: {"response": "The Acropolis is..."} — never do this.
 - The ONLY structured output allowed is <action> tags (see below), and only when adding/deleting content.
+
+FAMILY TRIP NOTES (open observations that may affect the plan — use them when the user asks to review or amend routes/days; propose concrete <action> changes when appropriate):
+${notesLines}
 
 ROLE: ${roleNote}
 

@@ -23,6 +23,7 @@ import TripMapPage from './pages/TripMapPage';
 import ItineraryPage from './pages/ItineraryPage';
 import TripsPage from './pages/TripsPage';
 import ImportPage from './pages/ImportPage';
+import NotesPage from './pages/NotesPage';
 import './i18n';
 
 function AppRoutes() {
@@ -78,6 +79,7 @@ function AppRoutes() {
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/trips" element={<TripsPage />} />
         <Route path="/import" element={<ImportPage />} />
+        <Route path="/notes" element={<NotesPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
       <Route path="/trips/new" element={<SetupPage />} />

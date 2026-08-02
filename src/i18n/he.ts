@@ -17,6 +17,7 @@ export default {
     quiz: 'חידון',
     settings: 'הגדרות',
     setup: 'הגדרה',
+    notes: 'הערות',
     travelLog: 'יומן טיול',
     admin: 'ניהול',
     weather: 'מזג אוויר',

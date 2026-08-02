@@ -27,6 +27,7 @@ import type {
   QuizAnswer,
   QuizQuestion,
   TravelLogEntry,
+  TripNote,
 } from '../types/trip';
 
 export async function joinTrip(tripCode: string): Promise<boolean> {
@@ -993,4 +994,27 @@ export async function seedTripData(tripCode: string): Promise<{ highlights: numb
     driving: driving.length,
     days: days.length,
   };
+}
+
+// ─── Trip notes ───────────────────────────────────────────────────────────────
+
+export function subscribeNotes(
+  tripCode: string,
+  callback: (notes: TripNote[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'trips', tripCode, 'notes');
+  return onSnapshot(colRef, (snap) => {
+    const notes = snap.docs
+      .map((d) => d.data() as TripNote)
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+    callback(notes);
+  });
+}
+
+export async function saveNote(tripCode: string, note: TripNote): Promise<void> {
+  await setDoc(doc(db, 'trips', tripCode, 'notes', note.id), note);
+}
+
+export async function deleteNote(tripCode: string, noteId: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripCode, 'notes', noteId));
 }

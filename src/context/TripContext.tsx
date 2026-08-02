@@ -14,6 +14,7 @@ import type {
   QuizQuestion,
   FamilyMember,
   TravelLogEntry,
+  TripNote,
 } from '../types/trip';
 import type { PassportStamp, EarnedStamp } from '../types/ai';
 import {
@@ -29,6 +30,7 @@ import {
   subscribeQuizAnswers,
   subscribeQuizQuestions,
   subscribeTravelLog,
+  subscribeNotes,
   subscribePassportStamps,
   subscribeEarnedStamps,
   getTripConfig,
@@ -55,6 +57,7 @@ interface TripContextType {
   quizAnswers: QuizAnswer[];
   quizQuestions: QuizQuestion[];
   travelLog: TravelLogEntry[];
+  notes: TripNote[];
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
@@ -121,6 +124,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
   const [travelLog, setTravelLog] = useState<TravelLogEntry[]>([]);
+  const [notes, setNotes] = useState<TripNote[]>([]);
   const [passportStamps, setPassportStamps] = useState<PassportStamp[]>([]);
   const [earnedStamps, setEarnedStamps] = useState<EarnedStamp[]>([]);
   const [configLoading, setConfigLoading] = useState(true);
@@ -181,6 +185,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     setQuizAnswers([]);
     setQuizQuestions([]);
     setTravelLog([]);
+    setNotes([]);
     setPassportStamps([]);
     setEarnedStamps([]);
     // Re-arm hotel-change detection for the (re)keyed trip.
@@ -232,6 +237,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     unsubs.push(subscribeQuizAnswers(tripCode, setQuizAnswers));
     unsubs.push(subscribeQuizQuestions(tripCode, setQuizQuestions));
     unsubs.push(subscribeTravelLog(tripCode, setTravelLog));
+    unsubs.push(subscribeNotes(tripCode, setNotes));
     unsubs.push(subscribePassportStamps(tripCode, setPassportStamps));
     unsubs.push(subscribeEarnedStamps(tripCode, setEarnedStamps));
 
@@ -396,6 +402,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         quizAnswers,
         quizQuestions,
         travelLog,
+        notes,
         passportStamps,
         earnedStamps,
         loading,

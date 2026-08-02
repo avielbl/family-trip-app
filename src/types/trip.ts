@@ -261,3 +261,17 @@ export interface TripDay {
   highlights: Highlight[];
   restaurants: Restaurant[];
 }
+
+// Free-form trip notes — observations about attractions, restaurants, routes
+// etc. that may affect planning. The AI assistant reads open notes and can
+// propose route/plan amendments from them.
+export interface TripNote {
+  id: string;
+  text: string;
+  category: 'attraction' | 'restaurant' | 'hotel' | 'route' | 'general';
+  relatedName?: string;
+  createdBy?: string; // member id
+  createdByName?: string;
+  createdAt: string; // ISO
+  status: 'open' | 'done';
+}

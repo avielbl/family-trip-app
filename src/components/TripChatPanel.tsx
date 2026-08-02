@@ -135,7 +135,7 @@ function sanitizeNumber(val: unknown, fallback = 0): number {
 export default function TripChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { i18n } = useTranslation();
   const {
-    tripCode, config, hotels, days, highlights, restaurants, driving, isAdmin,
+    tripCode, config, hotels, days, highlights, restaurants, driving, isAdmin, notes,
   } = useTripContext();
   const isRTL = i18n.language === 'he';
 
@@ -163,15 +163,36 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
     if (open) setTimeout(() => inputRef.current?.focus(), 150);
   }, [open]);
 
+  // Prompt hand-off: pages dispatch tripit:chat-prompt (Layout opens the
+  // panel); once open, send the pending prompt as a user message.
+  const pendingPrompt = useRef<string | null>(null);
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt?: string }>).detail;
+      if (detail?.prompt) pendingPrompt.current = detail.prompt;
+    };
+    window.addEventListener('tripit:chat-prompt', onPrompt);
+    return () => window.removeEventListener('tripit:chat-prompt', onPrompt);
+  }, []);
+  useEffect(() => {
+    if (open && pendingPrompt.current && !sending) {
+      const prompt = pendingPrompt.current;
+      pendingPrompt.current = null;
+      void sendMessage(prompt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per hand-off when the panel opens
+  }, [open, sending]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  async function sendMessage() {
-    if (!input.trim() || sending) return;
+  async function sendMessage(textOverride?: string) {
+    const source = textOverride ?? input;
+    if (!source.trim() || sending) return;
 
     // SECURITY: truncate to max length before sending to AI
-    const userText = input.trim().slice(0, MAX_INPUT_LENGTH);
+    const userText = source.trim().slice(0, MAX_INPUT_LENGTH);
     setInput('');
 
     const userMsg: ChatMessage = {
@@ -190,6 +211,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
       const systemPrompt = buildChatSystemPrompt({
         destination: config?.destination || config?.tripName,
         familySize: config?.familyMembers?.length,
+        notes,
         hotels,
         days,
         highlights,
@@ -498,7 +520,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
           />
           <button
             className="chat-send-btn"
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={sending || !input.trim()}
             aria-label={isRTL ? 'שלח' : 'Send'}
           >
