@@ -234,6 +234,19 @@ export interface QuizAnswer {
   correct: boolean;
 }
 
+export interface DayPlan {
+  morning?: string[];
+  morningHe?: string[];
+  afternoon?: string[];
+  afternoonHe?: string[];
+  evening?: string[];
+  eveningHe?: string[];
+  restaurants?: string[];
+  restaurantsHe?: string[];
+  tips?: string;
+  tipsHe?: string;
+}
+
 export interface TripDay {
   dayIndex: number; // 0-based
   date: string; // ISO date
@@ -241,6 +254,7 @@ export interface TripDay {
   titleHe: string;
   location: string;
   locationHe?: string;
+  plan?: DayPlan; // AI-generated / hand-edited day plan (any destination)
   flights: Flight[];
   hotels: Hotel[];
   driving: DrivingSegment[];

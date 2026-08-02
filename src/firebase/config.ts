@@ -11,7 +11,11 @@ import { getStorage } from 'firebase/storage';
 // Hosting (which exposes /__/auth on every hosting domain). Same-origin auth
 // is required for the redirect sign-in flow to survive third-party-storage
 // blocking in installed PWAs (iOS/Android standalone mode).
-const isLocalDev = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+// Preview-channel hosts (name--channel-hash.web.app) aren't registered as
+// OAuth redirect origins — fall back to the canonical auth domain there.
+const isPreviewChannel = window.location.hostname.includes('--');
+const isLocalDev =
+  ['localhost', '127.0.0.1'].includes(window.location.hostname) || isPreviewChannel;
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',

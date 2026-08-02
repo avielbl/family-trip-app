@@ -61,7 +61,7 @@ const PassportPage: React.FC = () => {
           <div className="passport-header">
             <div className="passport-emblem">🇬🇷</div>
             <h1>{t('passport.title')}</h1>
-            <div className="passport-subtitle">Greece 2026</div>
+            <div className="passport-subtitle">{config?.destination || config?.tripName || ''}</div>
           </div>
 
           <div className="stamp-count">
@@ -84,7 +84,7 @@ const PassportPage: React.FC = () => {
           <div className="passport-generate-row">
             <AISuggestPanel
               type="passport-stamp"
-              context={{ hotels, driving, days, existing: passportStamps }}
+              context={{ destination: config?.destination || config?.tripName, hotels, driving, days, existing: passportStamps }}
               onAccept={(items) => {
                 if (!tripCode) return;
                 items.forEach((item) => {
@@ -240,7 +240,7 @@ const PassportPage: React.FC = () => {
           <div className="passport-generate-row">
             <AISuggestPanel
               type="passport-stamp"
-              context={{ hotels, driving, days, existing: [] }}
+              context={{ destination: config?.destination || config?.tripName, hotels, driving, days, existing: [] }}
               onAccept={(items) => {
                 if (!tripCode) return;
                 items.forEach((item) => {

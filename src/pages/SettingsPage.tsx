@@ -223,7 +223,7 @@ const SettingsPage: React.FC = () => {
           {t('settings.about')}
         </label>
         <div className="trip-info">
-          <p>Greece Family Trip 2026 &mdash; Built with love</p>
+          <p>TripIt &mdash; Family adventures, built with love</p>
           <p>
             {config?.startDate} &ndash; {config?.endDate}
           </p>

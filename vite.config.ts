@@ -20,7 +20,7 @@ export default defineConfig({
       manifest: {
         name: 'TripIt',
         short_name: 'TripIt',
-        description: 'TripIt — Family adventure planner for Greece 2026',
+        description: 'TripIt — family trip planner',
         theme_color: '#1e40af',
         background_color: '#f0f9ff',
         display: 'standalone',

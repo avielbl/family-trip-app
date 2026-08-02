@@ -3,88 +3,32 @@ import { useTranslation } from 'react-i18next';
 import { MapPin, Building2, Star, Layers, UtensilsCrossed } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import type { Hotel, Highlight, Restaurant } from '../types/trip';
+import { cachedCoords, geocodeMany } from '../utils/geocode';
 
-// ─── City coords fallback ─────────────────────────────────────────────────────
+// ─── Place coordinate resolution ─────────────────────────────────────────────
+// Names are resolved asynchronously via the shared geocoder (seed table →
+// cache → Open-Meteo API), so the map follows any trip destination.
 
-const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-  // ── Actual trip: March–April 2026 ────────────────────────────────
-  'ioannina': { lat: 39.6650, lng: 20.8527 },
-  'yioannina': { lat: 39.6650, lng: 20.8527 },
-  'zagoria': { lat: 39.8900, lng: 20.7300 },
-  'zagori': { lat: 39.8900, lng: 20.7300 },
-  'kipi': { lat: 39.8640, lng: 20.7380 },
-  'kipoi': { lat: 39.8640, lng: 20.7380 },
-  'monodendri': { lat: 39.9040, lng: 20.7330 },
-  'papigo': { lat: 39.9880, lng: 20.7240 },
-  'voidomatis': { lat: 39.9050, lng: 20.7650 },
-  'vikos': { lat: 39.8985, lng: 20.7200 },
-  'metsovo': { lat: 39.7710, lng: 21.1830 },
-  'tsoumerka': { lat: 39.4720, lng: 21.0540 },
-  'kipina': { lat: 39.4720, lng: 21.0540 },
-  'pramenti': { lat: 39.5060, lng: 21.0730 },
-  'pertouli': { lat: 39.4730, lng: 21.4510 },
-  'palaios agios athanasios': { lat: 40.8810, lng: 22.1460 },
-  'palaios': { lat: 40.8810, lng: 22.1460 },
-  'pozar': { lat: 40.9670, lng: 22.0430 },
-  'loutraki': { lat: 40.9670, lng: 22.0430 },
-  'aridaia': { lat: 40.9750, lng: 22.0590 },
-  'edessa': { lat: 40.8005, lng: 22.0510 },
-  'thessaloniki': { lat: 40.6401, lng: 22.9444 },
-  'skg': { lat: 40.5196, lng: 22.9720 },
-  'imathia': { lat: 40.5300, lng: 22.1200 },
-  // ── Legacy / other Greek cities ──────────────────────────────────
-  'athens': { lat: 37.9838, lng: 23.7275 },
-  'athina': { lat: 37.9838, lng: 23.7275 },
-  'santorini': { lat: 36.3932, lng: 25.4615 },
-  'thira': { lat: 36.3932, lng: 25.4615 },
-  'mykonos': { lat: 37.4467, lng: 25.3289 },
-  'heraklion': { lat: 35.3387, lng: 25.1442 },
-  'crete': { lat: 35.2401, lng: 24.8093 },
-  'rhodes': { lat: 36.4341, lng: 28.2176 },
-  'corfu': { lat: 39.6243, lng: 19.9217 },
-  'nafplio': { lat: 37.5678, lng: 22.8011 },
-  'delphi': { lat: 38.4825, lng: 22.5009 },
-  'meteora': { lat: 39.7217, lng: 21.6306 },
-  'olympia': { lat: 37.6383, lng: 21.6300 },
-  'arachova': { lat: 38.4784, lng: 22.5895 },
-  'kalambaka': { lat: 39.7050, lng: 21.6289 },
-  'patras': { lat: 38.2466, lng: 21.7346 },
-  'volos': { lat: 39.3667, lng: 22.9333 },
-  'zakynthos': { lat: 37.7943, lng: 20.8956 },
-};
+type Geo = Record<string, { lat: number; lng: number } | null>;
 
-function getCityCoords(text: string): { lat: number; lng: number } | null {
-  const key = text.toLowerCase().trim();
-  for (const [name, coords] of Object.entries(CITY_COORDS)) {
-    if (key.includes(name) || name.includes(key)) return coords;
-  }
-  return null;
+function resolvePlace(geo: Geo, text?: string | null): { lat: number; lng: number } | null {
+  if (!text) return null;
+  return geo[text.trim()] ?? cachedCoords(text) ?? null;
 }
 
-function getHotelCoords(hotel: Hotel): { lat: number; lng: number } | null {
+function getHotelCoords(geo: Geo, hotel: Hotel): { lat: number; lng: number } | null {
   if (hotel.lat && hotel.lng) return { lat: hotel.lat, lng: hotel.lng };
-  return getCityCoords(hotel.city || hotel.name);
+  return resolvePlace(geo, hotel.city || hotel.name);
 }
 
-function getHighlightCoords(hl: Highlight): { lat: number; lng: number } | null {
+function getHighlightCoords(geo: Geo, hl: Highlight): { lat: number; lng: number } | null {
   if (hl.lat && hl.lng) return { lat: hl.lat, lng: hl.lng };
-  if (hl.address) {
-    const c = getCityCoords(hl.address);
-    if (c) return c;
-  }
-  if (hl.description) {
-    const c = getCityCoords(hl.description);
-    if (c) return c;
-  }
-  if (hl.name) return getCityCoords(hl.name);
-  return null;
+  return resolvePlace(geo, hl.address) ?? resolvePlace(geo, hl.name);
 }
 
-function getRestaurantCoords(r: Restaurant): { lat: number; lng: number } | null {
+function getRestaurantCoords(geo: Geo, r: Restaurant): { lat: number; lng: number } | null {
   if (r.lat && r.lng) return { lat: r.lat, lng: r.lng };
-  if (r.city) return getCityCoords(r.city);
-  if (r.address) return getCityCoords(r.address);
-  return null;
+  return resolvePlace(geo, r.city) ?? resolvePlace(geo, r.address);
 }
 
 // ─── Category icon colors ─────────────────────────────────────────────────────
@@ -100,10 +44,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   viewpoint: '#ea580c',
   other: '#6b7280',
 };
-
-// ─── SKG Airport (start/end point of driving route) ──────────────────────────
-
-const SKG_AIRPORT = { lat: 40.5196, lng: 22.9720 };
 
 // ─── OSRM real-road routing ───────────────────────────────────────────────────
 
@@ -153,7 +93,35 @@ const LEGEND_ITEMS = [
 export default function TripMapPage() {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
-  const { hotels, highlights, restaurants } = useTripContext();
+  const { hotels, highlights, restaurants, flights, config } = useTripContext();
+  const [geo, setGeo] = useState<Geo>({});
+
+  // Resolve every place name the map needs (async, cached). Includes the trip
+  // destination for the empty-map fallback and flight airports for the route.
+  useEffect(() => {
+    const names: (string | undefined | null)[] = [
+      config?.destination,
+      ...hotels.flatMap((h) => (h.lat && h.lng ? [] : [h.city || h.name])),
+      ...highlights.flatMap((hl) => (hl.lat && hl.lng ? [] : [hl.address, hl.name])),
+      ...restaurants.flatMap((r) => (r.lat && r.lng ? [] : [r.city, r.address])),
+      ...flights.flatMap((f) => [f.arrivalAirport, f.departureAirport]),
+    ];
+    let cancelled = false;
+    geocodeMany(names.filter((n): n is string => !!n)).then((resolved) => {
+      if (!cancelled) setGeo(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hotels, highlights, restaurants, flights, config]);
+
+  // Airport marker/route endpoints from the trip's flights (if resolvable).
+  const sortedFlights = useMemo(
+    () => [...flights].sort((a, b) => new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime()),
+    [flights]
+  );
+  const arrivalAirportName = sortedFlights[0]?.arrivalAirport || sortedFlights[0]?.arrivalAirportCode || null;
+  const airport = resolvePlace(geo, arrivalAirportName);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const tileLayerRef = useRef<import('leaflet').TileLayer | null>(null);
@@ -170,11 +138,11 @@ export default function TripMapPage() {
     () =>
       sortedHotels
         .map((h) => {
-          const c = getHotelCoords(h);
+          const c = getHotelCoords(geo, h);
           return c ? { hotel: h, lat: c.lat, lng: c.lng } : null;
         })
         .filter(Boolean) as { hotel: Hotel; lat: number; lng: number }[],
-    [sortedHotels]
+    [sortedHotels, geo]
   );
 
   // Highlight coords
@@ -182,11 +150,11 @@ export default function TripMapPage() {
     () =>
       highlights
         .map((hl) => {
-          const c = getHighlightCoords(hl);
+          const c = getHighlightCoords(geo, hl);
           return c ? { highlight: hl, lat: c.lat, lng: c.lng } : null;
         })
         .filter(Boolean) as { highlight: Highlight; lat: number; lng: number }[],
-    [highlights]
+    [highlights, geo]
   );
 
   // Restaurant coords
@@ -194,16 +162,17 @@ export default function TripMapPage() {
     () =>
       restaurants
         .map((r) => {
-          const c = getRestaurantCoords(r);
+          const c = getRestaurantCoords(geo, r);
           return c ? { restaurant: r, lat: c.lat, lng: c.lng } : null;
         })
         .filter(Boolean) as { restaurant: Restaurant; lat: number; lng: number }[],
-    [restaurants]
+    [restaurants, geo]
   );
 
-  // Default center: Northern Greece (actual trip area)
-  const defaultCenter: [number, number] = [40.2, 21.8];
-  const defaultZoom = 7;
+  // Default center: the trip destination (geocoded); world view as last resort.
+  const destCoords = resolvePlace(geo, config?.destination);
+  const defaultCenter: [number, number] = destCoords ? [destCoords.lat, destCoords.lng] : [30, 15];
+  const defaultZoom = destCoords ? 7 : 2;
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -256,16 +225,17 @@ export default function TripMapPage() {
         popupAnchor: [0, -22],
       });
 
-      L.marker([SKG_AIRPORT.lat, SKG_AIRPORT.lng], { icon: airportIcon })
-        .addTo(map)
-        .bindPopup(
-          `<div style="font-family:Inter,sans-serif;min-width:140px;">
-            <strong style="color:#0f172a">✈ Thessaloniki Airport</strong><br/>
-            <span style="font-size:12px;color:#6b7280">SKG — Makedonia Airport</span><br/>
-            <span style="font-size:11px;color:#6b7280">Arrival & Departure point</span>
-          </div>`
-        );
-      allLatLngs.push([SKG_AIRPORT.lat, SKG_AIRPORT.lng]);
+      if (airport) {
+        L.marker([airport.lat, airport.lng], { icon: airportIcon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="font-family:Inter,sans-serif;min-width:140px;">
+              <strong style="color:#0f172a">✈ ${arrivalAirportName ?? 'Airport'}</strong><br/>
+              <span style="font-size:11px;color:#6b7280">Arrival & Departure point</span>
+            </div>`
+          );
+        allLatLngs.push([airport.lat, airport.lng]);
+      }
 
       // ── Hotel markers (blue) ──────────────────────────────────────
       const hotelIcon = (index: number) =>
@@ -307,11 +277,10 @@ export default function TripMapPage() {
 
       // ── Route polyline: OSRM real roads (SKG → hotels → SKG) ────────
       if (hotelPoints.length > 0) {
-        const routeWaypoints = [
-          SKG_AIRPORT,
-          ...hotelPoints.map((pt) => ({ lat: pt.lat, lng: pt.lng })),
-          SKG_AIRPORT,
-        ];
+        const hotelWaypoints = hotelPoints.map((pt) => ({ lat: pt.lat, lng: pt.lng }));
+        const routeWaypoints = airport
+          ? [airport, ...hotelWaypoints, airport]
+          : hotelWaypoints;
         // Draw dashed fallback immediately, replace with OSRM geometry when ready
         const fallbackLine = L.polyline(
           routeWaypoints.map((w) => [w.lat, w.lng] as [number, number]),
@@ -414,7 +383,8 @@ export default function TripMapPage() {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [hotelPoints, highlightPoints, restaurantPoints]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- defaultCenter/Zoom are derived from destCoords
+  }, [hotelPoints, highlightPoints, restaurantPoints, airport, arrivalAirportName, destCoords?.lat, destCoords?.lng]);
 
   // Handle tile layer toggle without rebuilding the map
   useEffect(() => {

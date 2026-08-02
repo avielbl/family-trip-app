@@ -168,7 +168,7 @@ const HighlightsPage: React.FC = () => {
       {isAdmin && (
         <AISuggestPanel
           type="highlight"
-          context={{ hotels, driving, days, existing: highlights }}
+          context={{ destination: config?.destination || config?.tripName, hotels, driving, days, existing: highlights }}
           onAccept={handleAcceptSuggestions}
         />
       )}

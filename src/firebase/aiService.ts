@@ -243,6 +243,7 @@ export function parseImport(jsonStr: string, _target: ImportTarget): AIImportRes
 // ─── Suggestions ─────────────────────────────────────────────────────────────
 
 export interface SuggestContext {
+  destination?: string;
   hotels: Hotel[];
   driving: DrivingSegment[];
   days: TripDay[];
@@ -290,7 +291,7 @@ export function buildSuggestPrompt(
     .filter(Boolean)
     .join(', ');
 
-  return `You are a travel assistant planning a family Greece trip (2 adults + 4 kids, ages 4–14).
+  return `You are a travel assistant planning a family trip${context.destination ? ` to ${context.destination}` : ''}.
 
 ITINERARY:
 ${dayLines}
@@ -334,6 +335,8 @@ export function extractSuggestions(
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
 export interface ChatContext {
+  destination?: string;
+  familySize?: number;
   hotels: Hotel[];
   days: TripDay[];
   highlights: Highlight[];
@@ -383,7 +386,9 @@ export function buildChatSystemPrompt(ctx: ChatContext): string {
     ? 'LANGUAGE: Always respond in Hebrew (עברית). Only switch to English if the user explicitly requests it.'
     : 'LANGUAGE: Always respond in English. Only switch to Hebrew if the user explicitly requests it.';
 
-  return `You are TripIt AI — a friendly travel assistant for a family Greece trip (2 adults + 4 kids, ages 4–14).
+  const tripLabel = ctx.destination || 'trip';
+  const familyNote = ctx.familySize ? ` (family of ${ctx.familySize})` : '';
+  return `You are TripIt AI — a friendly travel assistant for a family trip to ${tripLabel}${familyNote}.
 Trip dates: ${ctx.startDate} to ${ctx.endDate}.
 
 ${langInstruction}

@@ -33,10 +33,12 @@ jobs:
       # lacks the Firebase Rules Admin role (grant it in Cloud IAM to automate
       # this). Until then, publish rule changes manually in the Firebase
       # Console → Firestore → Rules.
+      # main → live site; stage → "stage" preview channel (separate URL,
+      # posted in the run summary), so testing never overwrites production.
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          channelId: live
+          channelId: ${{ github.ref_name == 'main' && 'live' || 'stage' }}

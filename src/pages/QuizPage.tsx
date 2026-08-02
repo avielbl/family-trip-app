@@ -19,10 +19,25 @@ const QuizPage: React.FC = () => {
   } = useTripContext();
   const isRTL = i18n.language === 'he';
 
+  const hasPreTrip = quizQuestions.some((q) => q.dayIndex < 0);
+  const firstPreTripDay = hasPreTrip
+    ? Math.max(...quizQuestions.filter((q) => q.dayIndex < 0).map((q) => q.dayIndex))
+    : null;
   const [selectedDay, setSelectedDay] = useState<number>(
-    todayDayIndex >= 0 ? todayDayIndex : 0
+    todayDayIndex >= 0 ? todayDayIndex : hasPreTrip ? -1 : 0
   );
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
+
+  // Questions load async: before the trip starts, land on the first pre-trip
+  // question once it arrives (the mount default couldn't see it yet).
+  const autoSelectedPreTrip = React.useRef(false);
+  React.useEffect(() => {
+    if (todayDayIndex < 0 && firstPreTripDay !== null && !autoSelectedPreTrip.current) {
+      autoSelectedPreTrip.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time default after async load
+      setSelectedDay(firstPreTripDay);
+    }
+  }, [todayDayIndex, firstPreTripDay]);
   const [answeredNow, setAnsweredNow] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -30,6 +45,7 @@ const QuizPage: React.FC = () => {
   // from the active trip's start date (works for any trip, not just Greece).
   const tripStart = config ? new Date(config.startDate) : null;
   const isDayUnlocked = (dayIndex: number): boolean => {
+    if (dayIndex < 0) return true; // pre-trip questions are always open
     if (!tripStart) return true;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -115,8 +131,21 @@ const QuizPage: React.FC = () => {
         <span>{t('quiz.title')}</span>
       </h1>
 
-      {/* Day selector tabs */}
+      {/* Day selector tabs — pre-trip (⭐, always open) first, then trip days */}
       <div className="day-tabs">
+        {quizQuestions
+          .filter((q) => q.dayIndex < 0)
+          .sort((a, b) => b.dayIndex - a.dayIndex)
+          .map((q) => (
+            <button
+              key={q.dayIndex}
+              className={`day-tab pre-trip ${selectedDay === q.dayIndex ? 'active' : ''}`}
+              onClick={() => handleDayChange(q.dayIndex)}
+              title={isRTL ? 'לפני הטיול' : 'Pre-trip'}
+            >
+              ⭐{-q.dayIndex}
+            </button>
+          ))}
         {Array.from({ length: totalDays }, (_, i) => (
           <button
             key={i}
@@ -154,7 +183,9 @@ const QuizPage: React.FC = () => {
           <div className="quiz-question">
             <Star size={20} className="quiz-star" />
             <h2>
-              {t('quiz.question', { day: selectedDay + 1 })}
+              {selectedDay < 0
+                ? (isRTL ? `שאלת חימום ${-selectedDay} ⭐` : `Warm-up question ${-selectedDay} ⭐`)
+                : t('quiz.question', { day: selectedDay + 1 })}
             </h2>
             <p>{isRTL ? currentQuestion.questionHe : currentQuestion.question}</p>
           </div>

@@ -161,7 +161,7 @@ const RestaurantsPage: React.FC = () => {
       {isAdmin && (
         <AISuggestPanel
           type="restaurant"
-          context={{ hotels, driving, days, existing: restaurants }}
+          context={{ destination: config?.destination || config?.tripName, hotels, driving, days, existing: restaurants }}
           onAccept={handleAcceptSuggestions}
         />
       )}

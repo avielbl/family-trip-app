@@ -41,7 +41,40 @@ export function getAiSettings(): AiSettings {
   const provider: AiProviderId = stored === 'gemini' ? 'gemini' : 'anthropic';
   const model = localStorage.getItem(MODEL_KEY_PREFIX + provider) || AI_MODELS[provider].default;
   const apiKey = localStorage.getItem(API_KEY_PREFIX + provider) || '';
+  if (apiKey) return { provider, model, apiKey };
+
+  // No key configured here — inherit the shared trip AI config (admin page,
+  // synced from the server), so one configured key powers every AI feature.
+  const shared = getSharedAiConfig();
+  if (shared) return shared;
+
   return { provider, model, apiKey };
+}
+
+function getSharedAiConfig(): AiSettings | null {
+  try {
+    const raw = localStorage.getItem('aiConfig');
+    if (!raw) return null;
+    const cfg = JSON.parse(raw) as { provider?: string; model?: string; apiKey?: string };
+    if (!cfg.apiKey) return null;
+    if (cfg.provider === 'claude') {
+      return {
+        provider: 'anthropic',
+        model: cfg.model || AI_MODELS.anthropic.default,
+        apiKey: cfg.apiKey,
+      };
+    }
+    if (cfg.provider === 'gemini') {
+      return {
+        provider: 'gemini',
+        model: cfg.model || AI_MODELS.gemini.default,
+        apiKey: cfg.apiKey,
+      };
+    }
+    return null; // e.g. groq — not supported by these providers
+  } catch {
+    return null;
+  }
 }
 
 export function saveAiSettings(s: AiSettings): void {

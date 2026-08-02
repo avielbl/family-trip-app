@@ -188,6 +188,8 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
 
     try {
       const systemPrompt = buildChatSystemPrompt({
+        destination: config?.destination || config?.tripName,
+        familySize: config?.familyMembers?.length,
         hotels,
         days,
         highlights,

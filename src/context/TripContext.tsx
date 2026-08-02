@@ -183,6 +183,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     setTravelLog([]);
     setPassportStamps([]);
     setEarnedStamps([]);
+    // Re-arm hotel-change detection for the (re)keyed trip.
+    isFirstHotelLoad.current = true;
+    prevHotelsRef.current = null;
 
     if (!tripCode) {
       setConfigLoading(false);
@@ -212,7 +215,14 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
     unsubs.push(subscribeTripDays(tripCode, setDays));
     unsubs.push(subscribeFlights(tripCode, setFlights));
-    unsubs.push(subscribeHotels(tripCode, setHotels));
+    unsubs.push(
+      subscribeHotels(tripCode, (h) => {
+        // Mark that a real snapshot arrived before state lands, so change
+        // detection baselines on delivered data instead of the initial [].
+        isFirstHotelLoad.current = false;
+        setHotels(h);
+      })
+    );
     unsubs.push(subscribeDriving(tripCode, setDriving));
     unsubs.push(subscribeRentalCars(tripCode, setRentalCars));
     unsubs.push(subscribeHighlights(tripCode, setHighlights));
@@ -313,19 +323,24 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     (!!config?.adminUid && config.adminUid === firebaseUser?.uid) ||
     isBootstrapAdminEmail(firebaseUser?.email);
 
-  // Hotel change detection (admin only)
+  // Hotel change detection (admin only). The comparison baseline is the first
+  // snapshot Firestore actually delivers — NOT the initial empty state — so
+  // simply opening the app never looks like "hotels changed".
   useEffect(() => {
+    if (isFirstHotelLoad.current) {
+      // Still waiting for the first delivered snapshot for this trip.
+      return;
+    }
     if (!isAdmin) {
       prevHotelsRef.current = hotels;
       return;
     }
-    if (isFirstHotelLoad.current) {
+    if (prevHotelsRef.current === null) {
       prevHotelsRef.current = hotels;
-      isFirstHotelLoad.current = false;
       return;
     }
     const prev = prevHotelsRef.current;
-    if (prev !== null) {
+    {
       const changed =
         prev.length !== hotels.length ||
         hotels.some((h) => {

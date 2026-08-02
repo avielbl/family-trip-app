@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Calendar,
@@ -12,9 +12,13 @@ import {
   Clock,
   CheckCircle2,
   ChevronRight,
+  Wand2,
+  Pencil,
 } from 'lucide-react';
 import { format, parseISO, addDays } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
+import { saveTripDay } from '../firebase/tripService';
+import { generateText, hasAiKey, stripJsonFences } from '../ai';
 import type { TripDay, Hotel, Flight, DrivingSegment, Highlight, Restaurant } from '../types/trip';
 
 // ─── Curated Greece itinerary suggestions ────────────────────────────────────
@@ -280,7 +284,9 @@ interface DayData {
 export default function ItineraryPage() {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
-  const { days, hotels, flights, driving, highlights, restaurants, config } = useTripContext();
+  const { days, hotels, flights, driving, highlights, restaurants, config, tripCode, isAdmin } = useTripContext();
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planError, setPlanError] = useState('');
 
   // Curated suggestions are Greece-specific — only surface them on a Greece trip.
   const isGreeceTrip =
@@ -302,13 +308,106 @@ export default function ItineraryPage() {
       const dayDriving = driving.filter((d) => d.dayIndex === i);
       const dayHighlights = highlights.filter((h) => h.dayIndex === i);
       const dayRestaurants = restaurants.filter((r) => r.dayIndex === i);
-      const suggestion = isGreeceTrip
-        ? GREECE_SUGGESTIONS[Math.min(i, GREECE_SUGGESTIONS.length - 1)]
-        : EMPTY_SUGGESTION;
+      const storedPlan = tripDay?.plan;
+      const suggestion: DaySuggestion = storedPlan
+        ? {
+            ...EMPTY_SUGGESTION,
+            title: tripDay?.title ?? '',
+            titleHe: tripDay?.titleHe ?? '',
+            location: tripDay?.location ?? '',
+            locationHe: tripDay?.locationHe ?? tripDay?.location ?? '',
+            morning: storedPlan.morning ?? [],
+            morningHe: storedPlan.morningHe ?? storedPlan.morning ?? [],
+            afternoon: storedPlan.afternoon ?? [],
+            afternoonHe: storedPlan.afternoonHe ?? storedPlan.afternoon ?? [],
+            evening: storedPlan.evening ?? [],
+            eveningHe: storedPlan.eveningHe ?? storedPlan.evening ?? [],
+            restaurants: storedPlan.restaurants ?? [],
+            restaurantsHe: storedPlan.restaurantsHe ?? storedPlan.restaurants ?? [],
+            tips: storedPlan.tips ?? '',
+            tipsHe: storedPlan.tipsHe ?? storedPlan.tips ?? '',
+          }
+        : isGreeceTrip
+          ? GREECE_SUGGESTIONS[Math.min(i, GREECE_SUGGESTIONS.length - 1)]
+          : EMPTY_SUGGESTION;
 
       return { dayIndex: i, date, tripDay, suggestion, hotel, flights: dayFlights, driving: dayDriving, highlights: dayHighlights, restaurants: dayRestaurants };
     });
   }, [days, hotels, flights, driving, highlights, restaurants, totalDays, tripStart, isGreeceTrip]);
+
+
+  // Admin: AI-generate a per-day plan for ANY destination and store it on the
+  // trip's day documents (editable afterwards; shown instead of curated content).
+  async function handleGeneratePlan() {
+    if (!config || !tripCode || planBusy) return;
+    if (!hasAiKey()) {
+      setPlanError(isRTL ? 'יש להגדיר מפתח AI בעמוד הניהול' : 'Configure an AI key on the Admin page first');
+      return;
+    }
+    const overwrite = days.some((d) => d.plan);
+    if (overwrite && !window.confirm(isRTL ? 'קיימת תוכנית — להחליף אותה?' : 'A plan exists — replace it?')) return;
+    setPlanBusy(true);
+    setPlanError('');
+    try {
+      const hotelLines = hotels
+        .map((h) => `- ${h.name} in ${h.city}: ${(h.checkIn ?? '').slice(0, 10)} to ${(h.checkOut ?? '').slice(0, 10)}`)
+        .join('\n');
+      const flightLines = flights
+        .map((f) => `- ${f.departureAirport} -> ${f.arrivalAirport} on ${(f.departureTime ?? '').slice(0, 10)}`)
+        .join('\n');
+      const prompt = `Plan a family day-by-day itinerary for a trip to ${config.destination || config.tripName}.
+Trip dates: ${config.startDate} to ${config.endDate} (${totalDays} days, dayIndex 0 to ${totalDays - 1}).
+Base each day around where the family sleeps that night:
+HOTELS:\n${hotelLines || '(none listed)'}
+FLIGHTS:\n${flightLines || '(none listed)'}
+Rules: realistic driving distances; kid-friendly activities; arrival/departure days lighter.
+Return ONLY a valid JSON array (no markdown), one item per day:
+{"dayIndex":0,"title":"","titleHe":"","location":"","locationHe":"","morning":["",""],"morningHe":["",""],"afternoon":[""],"afternoonHe":[""],"evening":[""],"eveningHe":[""],"restaurants":[""],"restaurantsHe":[""],"tips":"","tipsHe":""}`;
+      const raw = await generateText(prompt, 16384);
+      const parsed = JSON.parse(stripJsonFences(raw)) as Array<Record<string, unknown>>;
+      for (const item of parsed) {
+        const di = Number(item.dayIndex);
+        if (!Number.isInteger(di) || di < 0 || di >= totalDays) continue;
+        const existing = days.find((d) => d.dayIndex === di);
+        const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+        const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined);
+        await saveTripDay(tripCode, {
+          dayIndex: di,
+          date: existing?.date ?? format(addDays(tripStart, di), 'yyyy-MM-dd'),
+          title: str(item.title) ?? existing?.title ?? `Day ${di + 1}`,
+          titleHe: str(item.titleHe) ?? existing?.titleHe ?? `יום ${di + 1}`,
+          location: str(item.location) ?? existing?.location ?? '',
+          locationHe: str(item.locationHe) ?? existing?.locationHe,
+          flights: existing?.flights ?? [],
+          hotels: existing?.hotels ?? [],
+          driving: existing?.driving ?? [],
+          highlights: existing?.highlights ?? [],
+          restaurants: existing?.restaurants ?? [],
+          plan: {
+            morning: arr(item.morning),
+            morningHe: arr(item.morningHe),
+            afternoon: arr(item.afternoon),
+            afternoonHe: arr(item.afternoonHe),
+            evening: arr(item.evening),
+            eveningHe: arr(item.eveningHe),
+            restaurants: arr(item.restaurants),
+            restaurantsHe: arr(item.restaurantsHe),
+            tips: str(item.tips),
+            tipsHe: str(item.tipsHe),
+          },
+        });
+      }
+    } catch (e) {
+      setPlanError((e as Error).message);
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+
+  async function handleSaveDay(day: TripDay) {
+    if (!tripCode) return;
+    await saveTripDay(tripCode, day);
+  }
 
   return (
     <div className="itinerary-page">
@@ -320,6 +419,18 @@ export default function ItineraryPage() {
           ? `${totalDays} ימי הרפתקה ב${config?.destinationHe ?? config?.destination ?? 'טיול'} – ${format(tripStart, 'dd/MM/yyyy')}`
           : `${totalDays} days of adventure in ${config?.destination ?? 'your trip'} – ${format(tripStart, 'MMM d, yyyy')}`}
       </p>
+
+      {isAdmin && (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <button className="admin-btn primary" onClick={handleGeneratePlan} disabled={planBusy}>
+            <Wand2 size={14} />
+            {planBusy
+              ? (isRTL ? 'יוצר תוכנית...' : 'Generating plan...')
+              : (isRTL ? 'צור תוכנית עם AI' : 'Generate plan with AI')}
+          </button>
+          {planError && <span className="setup-error" style={{ fontSize: 12 }}>{planError}</span>}
+        </div>
+      )}
 
       <div className="itinerary-table-container">
         {/* ─── Desktop Table ─────────────────────────────────────── */}
@@ -346,7 +457,14 @@ export default function ItineraryPage() {
       {/* ─── Mobile Card View ────────────────────────────────────── */}
       <div className="itinerary-cards">
         {itinerary.map((day) => (
-          <ItineraryCard key={day.dayIndex} day={day} isRTL={isRTL} />
+          <ItineraryCard
+            key={day.dayIndex}
+            day={day}
+            isRTL={isRTL}
+            isAdmin={isAdmin}
+            onSaveDay={handleSaveDay}
+            tripStart={tripStart}
+          />
         ))}
       </div>
     </div>
@@ -480,7 +598,20 @@ function ItineraryTableRow({ day, isRTL }: { day: DayData; isRTL: boolean }) {
 
 // ─── Mobile Card ──────────────────────────────────────────────────────────────
 
-function ItineraryCard({ day, isRTL }: { day: DayData; isRTL: boolean }) {
+function ItineraryCard({
+  day,
+  isRTL,
+  isAdmin,
+  onSaveDay,
+  tripStart,
+}: {
+  day: DayData;
+  isRTL: boolean;
+  isAdmin?: boolean;
+  onSaveDay?: (d: TripDay) => Promise<void>;
+  tripStart?: Date;
+}) {
+  const [editing, setEditing] = useState(false);
   const { dayIndex, date, tripDay, suggestion, hotel, flights: dayFlights, driving: dayDriving, highlights: dayHighlights, restaurants: dayRestaurants } = day;
 
   const title = isRTL
@@ -504,7 +635,30 @@ function ItineraryCard({ day, isRTL }: { day: DayData; isRTL: boolean }) {
             <span>{location}</span>
           </div>
         </div>
+        {isAdmin && onSaveDay && (
+          <button
+            className="admin-icon-btn"
+            style={{ marginInlineStart: 'auto' }}
+            onClick={() => setEditing((e) => !e)}
+            title={isRTL ? 'עריכת היום' : 'Edit day'}
+          >
+            <Pencil size={14} />
+          </button>
+        )}
       </div>
+
+      {editing && onSaveDay && (
+        <DayPlanEditor
+          day={day}
+          isRTL={isRTL}
+          tripStart={tripStart}
+          onCancel={() => setEditing(false)}
+          onSave={async (updated) => {
+            await onSaveDay(updated);
+            setEditing(false);
+          }}
+        />
+      )}
 
       {/* Flights */}
       {dayFlights.length > 0 && (
@@ -632,6 +786,101 @@ function ItineraryCard({ day, isRTL }: { day: DayData; isRTL: boolean }) {
       <div className="itinerary-tip">
         <span className="tip-icon">💡</span>
         <span>{isRTL ? suggestion.tipsHe : suggestion.tips}</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Per-day plan editor (admin) ──────────────────────────────────────────────
+
+function DayPlanEditor({
+  day,
+  isRTL,
+  tripStart,
+  onSave,
+  onCancel,
+}: {
+  day: DayData;
+  isRTL: boolean;
+  tripStart?: Date;
+  onSave: (d: TripDay) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const base = day.tripDay;
+  const plan = base?.plan ?? {};
+  const lines = (v?: string[]) => (v ?? []).join('\n');
+  const [title, setTitle] = useState(isRTL ? (base?.titleHe ?? '') : (base?.title ?? ''));
+  const [location, setLocation] = useState(isRTL ? (base?.locationHe ?? base?.location ?? '') : (base?.location ?? ''));
+  const [morning, setMorning] = useState(lines(isRTL ? plan.morningHe : plan.morning));
+  const [afternoon, setAfternoon] = useState(lines(isRTL ? plan.afternoonHe : plan.afternoon));
+  const [evening, setEvening] = useState(lines(isRTL ? plan.eveningHe : plan.evening));
+  const [tips, setTips] = useState((isRTL ? plan.tipsHe : plan.tips) ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const toArr = (v: string) => v.split('\n').map((x) => x.trim()).filter(Boolean);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated: TripDay = {
+        dayIndex: day.dayIndex,
+        date: base?.date ?? format(tripStart ? addDays(tripStart, day.dayIndex) : day.date, 'yyyy-MM-dd'),
+        title: isRTL ? (base?.title ?? title) : title,
+        titleHe: isRTL ? title : (base?.titleHe ?? title),
+        location: isRTL ? (base?.location ?? location) : location,
+        locationHe: isRTL ? location : base?.locationHe,
+        flights: base?.flights ?? [],
+        hotels: base?.hotels ?? [],
+        driving: base?.driving ?? [],
+        highlights: base?.highlights ?? [],
+        restaurants: base?.restaurants ?? [],
+        plan: {
+          ...plan,
+          ...(isRTL
+            ? { morningHe: toArr(morning), afternoonHe: toArr(afternoon), eveningHe: toArr(evening), tipsHe: tips }
+            : { morning: toArr(morning), afternoon: toArr(afternoon), evening: toArr(evening), tips }),
+        },
+      };
+      await onSave(updated);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const field = (label: string, value: string, set: (v: string) => void, rows = 3) => (
+    <label style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <textarea
+        className="setup-input"
+        style={{ width: '100%', marginTop: 2, minHeight: rows * 20 }}
+        value={value}
+        onChange={(e) => set(e.target.value)}
+      />
+    </label>
+  );
+
+  return (
+    <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-color, #e5e7eb)' }}>
+      <label style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+        <span style={{ color: 'var(--text-muted)' }}>{isRTL ? 'כותרת' : 'Title'}</span>
+        <input className="setup-input" style={{ width: '100%', marginTop: 2 }} value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <label style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+        <span style={{ color: 'var(--text-muted)' }}>{isRTL ? 'מיקום' : 'Location'}</span>
+        <input className="setup-input" style={{ width: '100%', marginTop: 2 }} value={location} onChange={(e) => setLocation(e.target.value)} />
+      </label>
+      {field(isRTL ? 'בוקר (שורה לכל פעילות)' : 'Morning (one per line)', morning, setMorning)}
+      {field(isRTL ? 'אחר הצהריים' : 'Afternoon', afternoon, setAfternoon)}
+      {field(isRTL ? 'ערב' : 'Evening', evening, setEvening, 2)}
+      {field(isRTL ? 'טיפים' : 'Tips', tips, setTips, 2)}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="admin-btn primary" onClick={handleSave} disabled={saving}>
+          {saving ? (isRTL ? 'שומר...' : 'Saving...') : (isRTL ? 'שמירה' : 'Save')}
+        </button>
+        <button className="admin-btn secondary" onClick={onCancel}>
+          {isRTL ? 'ביטול' : 'Cancel'}
+        </button>
       </div>
     </div>
   );

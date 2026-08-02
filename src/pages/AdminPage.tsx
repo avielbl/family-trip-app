@@ -44,6 +44,10 @@ export default function AdminPage() {
   const [generating, setGenerating] = useState(false);
   const [quizError, setQuizError] = useState('');
 
+  // Greece-only content seeds (legacy) — hidden on other destinations.
+  const isGreeceTrip = ((config?.destination ?? '') + (config?.tripName ?? ''))
+    .toLowerCase().match(/greece|יוון/) !== null;
+
   const inviteUrl = tripCode
     ? `${window.location.origin}/join/${tripCode}`
     : '';
@@ -188,8 +192,9 @@ export default function AdminPage() {
     setQuizError('');
     try {
       const destination = config?.destination ?? config?.tripName ?? '';
-      const prompt = `Create EXACTLY ${totalDays} kid-friendly multiple-choice quiz questions about ${destination} for a family trip.
-One question per day: dayIndex 0 to ${totalDays - 1}, ids "q1" to "q${totalDays}".
+      const prompt = `Create EXACTLY ${totalDays + 3} kid-friendly multiple-choice quiz questions about ${destination} for a family trip.
+First 3 are pre-trip warm-up questions (general destination knowledge): dayIndex -1, -2, -3, ids "qpre1" to "qpre3".
+Then one question per trip day: dayIndex 0 to ${totalDays - 1}, ids "q1" to "q${totalDays}".
 Each question must be bilingual (English + Hebrew) with 4 options and a fun fact.
 Return a JSON array where each item matches exactly this shape:
 {"id":"q1","dayIndex":0,"question":"","questionHe":"","options":["","","",""],"optionsHe":["","","",""],"correctIndex":0,"funFact":"","funFactHe":""}
@@ -384,7 +389,8 @@ Return ONLY valid JSON, no markdown.`;
         </div>
       </div>
 
-      {/* Seed Trip Content */}
+      {/* Seed Trip Content — legacy Greece 2026 content, Greece trips only */}
+      {isGreeceTrip && (
       <div className="admin-section">
         <div className="admin-section-title">
           <Database size={16} />
@@ -444,6 +450,7 @@ Return ONLY valid JSON, no markdown.`;
           </p>
         )}
       </div>
+      )}
 
       {/* Family Members */}
       <div className="admin-section">
@@ -555,7 +562,7 @@ Return ONLY valid JSON, no markdown.`;
           ))}
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-          {quizQuestions.length === 0 && (
+          {quizQuestions.length === 0 && isGreeceTrip && (
             <button className="admin-btn secondary" onClick={handleSeedQuiz} disabled={quizBusy}>
               <Plus size={14} />
               {isHe ? 'טען שאלות יוון' : 'Seed Greece questions'}

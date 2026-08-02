@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Mountain } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
+import { geocode as geocodeCity } from '../utils/geocode';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -33,69 +34,7 @@ interface SkiForecast {
 }
 
 // ─── City coordinate resolution ──────────────────────────────────────────────
-// Hotels without lat/lng are resolved via the free Open-Meteo geocoding API and
-// cached in localStorage, so weather follows the active trip automatically.
-// The table below is just a pre-seeded cache for common Greek cities.
-
-const SEED_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-  'athens': { lat: 37.9838, lng: 23.7275 },
-  'athina': { lat: 37.9838, lng: 23.7275 },
-  'thessaloniki': { lat: 40.6401, lng: 22.9444 },
-  'santorini': { lat: 36.3932, lng: 25.4615 },
-  'thira': { lat: 36.3932, lng: 25.4615 },
-  'mykonos': { lat: 37.4467, lng: 25.3289 },
-  'heraklion': { lat: 35.3387, lng: 25.1442 },
-  'crete': { lat: 35.2401, lng: 24.8093 },
-  'rhodes': { lat: 36.4341, lng: 28.2176 },
-  'corfu': { lat: 39.6243, lng: 19.9217 },
-  'nafplio': { lat: 37.5678, lng: 22.8011 },
-  'delphi': { lat: 38.4825, lng: 22.5009 },
-  'meteora': { lat: 39.7217, lng: 21.6306 },
-  'olympia': { lat: 37.6383, lng: 21.6300 },
-  'arachova': { lat: 38.4784, lng: 22.5895 },
-  'kalambaka': { lat: 39.7050, lng: 21.6289 },
-  'patras': { lat: 38.2466, lng: 21.7346 },
-  'volos': { lat: 39.3667, lng: 22.9333 },
-  'zakynthos': { lat: 37.7943, lng: 20.8956 },
-  'ios': { lat: 36.7218, lng: 25.2865 },
-  'paros': { lat: 37.0853, lng: 25.1500 },
-  'naxos': { lat: 37.1036, lng: 25.3764 },
-};
-
-const GEOCODE_CACHE_KEY = 'weatherGeocodeCache';
-
-function readGeocodeCache(): Record<string, { lat: number; lng: number }> {
-  try {
-    return JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) ?? '{}');
-  } catch {
-    return {};
-  }
-}
-
-async function geocodeCity(city: string): Promise<{ lat: number; lng: number } | null> {
-  const key = city.toLowerCase().trim();
-  if (!key) return null;
-  const seeded = getCityCoords(city);
-  if (seeded) return seeded;
-  const cache = readGeocodeCache();
-  if (cache[key]) return cache[key];
-  try {
-    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-    url.searchParams.set('name', city);
-    url.searchParams.set('count', '1');
-    const res = await fetch(url.toString());
-    if (!res.ok) return null;
-    const data = await res.json();
-    const hit = data.results?.[0];
-    if (!hit) return null;
-    const coords = { lat: hit.latitude as number, lng: hit.longitude as number };
-    cache[key] = coords;
-    localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
-    return coords;
-  } catch {
-    return null;
-  }
-}
+// Shared geocoder (seed table → cache → Open-Meteo API) — src/utils/geocode.
 
 // ─── Ski Resorts (shown only when the trip is actually nearby) ───────────────
 
@@ -135,14 +74,6 @@ function findNearbySkiResorts(locations: Array<{ lat: number; lng: number }>) {
     }
   }
   return nearby;
-}
-
-function getCityCoords(city: string): { lat: number; lng: number } | null {
-  const key = city.toLowerCase().trim();
-  for (const [name, coords] of Object.entries(SEED_CITY_COORDS)) {
-    if (key.includes(name) || name.includes(key)) return coords;
-  }
-  return null;
 }
 
 // ─── WMO Weather Code helpers ─────────────────────────────────────────────────
