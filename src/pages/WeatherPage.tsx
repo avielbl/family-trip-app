@@ -158,6 +158,7 @@ export default function WeatherPage() {
   // plus chat-added extras; fall back to the trip's destination when the trip
   // has no hotels yet. Coordinates come from the hotel doc when present,
   // otherwise from geocoding.
+  const destination = config?.destination;
   const wantedLocations = useMemo(() => {
     const seen = new Set<string>();
     const wanted: Array<{ label: string; city: string; lat?: number; lng?: number }> = [];
@@ -174,14 +175,15 @@ export default function WeatherPage() {
       seen.add(key);
       wanted.push({ label: e.city, city: e.city, lat: e.lat, lng: e.lng });
     }
-    if (wanted.length === 0 && config?.destination) {
-      wanted.push({ label: config.destination, city: config.destination });
+    if (wanted.length === 0 && destination) {
+      wanted.push({ label: destination, city: destination });
     }
     return wanted;
-  }, [hotels, extraLocations, config?.destination]);
+  }, [hotels, extraLocations, destination]);
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset loading before the async refetch for the new location set
     setLoading(true);
     const fetchAll = async () => {
       // Resolve coordinates (hotel doc → seed table → geocoding API)

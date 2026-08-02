@@ -110,7 +110,7 @@ function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatA
           type: type as ChatActionType,
           data,
         });
-      } catch {}
+      } catch { /* ignore malformed action JSON */ }
       return '';
     })
     .trim();

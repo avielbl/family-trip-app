@@ -27,7 +27,7 @@ export function getAIConfig(): AIConfig {
   try {
     const stored = localStorage.getItem(AI_CONFIG_KEY);
     if (stored) return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
-  } catch {}
+  } catch { /* ignore corrupt stored config, fall back to defaults */ }
   return { ...DEFAULT_CONFIG };
 }
 
@@ -67,8 +67,10 @@ function extractJSON(text: string): string {
 
 // ─── Provider Adapters ───────────────────────────────────────────────────────
 
+type GeminiPart = { inline_data: { mime_type: string; data: string } } | { text: string };
+
 async function callGemini(config: AIConfig, prompt: string, images?: File[]): Promise<string> {
-  const parts: any[] = [];
+  const parts: GeminiPart[] = [];
   if (images?.length) {
     for (const file of images) {
       const { b64, mimeType } = await fileToBase64(file);
@@ -78,7 +80,10 @@ async function callGemini(config: AIConfig, prompt: string, images?: File[]): Pr
   parts.push({ text: prompt });
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-  const body: any = { contents: [{ parts }] };
+  const body: {
+    contents: Array<{ parts: GeminiPart[] }>;
+    generationConfig?: { responseMimeType: string };
+  } = { contents: [{ parts }] };
   // JSON mode only supported for non-vision requests
   if (!images?.length) {
     body.generationConfig = { responseMimeType: 'application/json' };
@@ -99,11 +104,15 @@ async function callGemini(config: AIConfig, prompt: string, images?: File[]): Pr
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
+type GroqContentPart =
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'text'; text: string };
+
 async function callGroq(config: AIConfig, prompt: string, images?: File[]): Promise<string> {
-  let messageContent: any;
+  let messageContent: string | GroqContentPart[];
 
   if (images?.length) {
-    const parts: any[] = [];
+    const parts: GroqContentPart[] = [];
     for (const file of images) {
       const { b64, mimeType } = await fileToBase64(file);
       parts.push({ type: 'image_url', image_url: { url: `data:${mimeType};base64,${b64}` } });
@@ -136,8 +145,12 @@ async function callGroq(config: AIConfig, prompt: string, images?: File[]): Prom
   return data.choices?.[0]?.message?.content ?? '';
 }
 
+type ClaudeContentBlock =
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'text'; text: string };
+
 async function callClaude(config: AIConfig, prompt: string, images?: File[]): Promise<string> {
-  const content: any[] = [];
+  const content: ClaudeContentBlock[] = [];
   if (images?.length) {
     for (const file of images) {
       const { b64, mimeType } = await fileToBase64(file);
@@ -223,9 +236,9 @@ RULES:
 - Dates: ISO 8601 format (e.g. "2026-03-24T14:30:00")`;
 }
 
-export function parseImport(jsonStr: string, _target: ImportTarget): AIImportResult[] {
+export function parseImport(jsonStr: string): AIImportResult[] {
   const cleaned = extractJSON(jsonStr);
-  let arr: any[];
+  let arr: Record<string, unknown>[];
   try {
     const parsed = JSON.parse(cleaned);
     arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -316,7 +329,7 @@ export function extractSuggestions(
   type: 'restaurant' | 'highlight' | 'passport-stamp'
 ): AISuggestion[] {
   const cleaned = extractJSON(jsonStr);
-  let arr: any[];
+  let arr: Record<string, unknown>[];
   try {
     const parsed = JSON.parse(cleaned);
     arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -327,7 +340,7 @@ export function extractSuggestions(
     id: `suggest-${Date.now()}-${i}`,
     type,
     data: item,
-    rationale: item.rationale ?? '',
+    rationale: (item.rationale as string | undefined) ?? '',
     accepted: false,
   }));
 }

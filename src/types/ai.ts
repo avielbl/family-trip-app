@@ -10,7 +10,7 @@ export type ImportTarget = 'restaurant' | 'highlight' | 'hotel' | 'flight';
 
 export interface AIImportResult {
   id: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   accepted: boolean;
   edited: boolean;
 }
@@ -18,7 +18,7 @@ export interface AIImportResult {
 export interface AISuggestion {
   id: string;
   type: 'restaurant' | 'highlight' | 'passport-stamp';
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   rationale: string;
   accepted: boolean;
 }

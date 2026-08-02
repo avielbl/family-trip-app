@@ -34,7 +34,6 @@ const QuizPage: React.FC = () => {
   React.useEffect(() => {
     if (todayDayIndex < 0 && firstPreTripDay !== null && !autoSelectedPreTrip.current) {
       autoSelectedPreTrip.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time default after async load
       setSelectedDay(firstPreTripDay);
     }
   }, [todayDayIndex, firstPreTripDay]);

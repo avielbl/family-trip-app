@@ -349,6 +349,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         }) ||
         prev.some((p) => !hotels.find((h) => h.id === p.id));
       if (changed) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- banner reacts to external Firestore hotel changes
         setHotelChangeBanner(true);
       }
     }

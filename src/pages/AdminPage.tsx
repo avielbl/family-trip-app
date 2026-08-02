@@ -95,8 +95,8 @@ export default function AdminPage() {
     try {
       await callAI('Reply with exactly the word: ok');
       setAiTestResult(isHe ? t('ai.testOk') : t('ai.testOk'));
-    } catch (e: any) {
-      setAiTestResult(`${t('ai.testFail')}: ${e.message}`);
+    } catch (e) {
+      setAiTestResult(`${t('ai.testFail')}: ${(e as Error).message}`);
     } finally {
       setAiTesting(false);
     }
@@ -119,8 +119,8 @@ export default function AdminPage() {
           ? `✓ נטען בהצלחה: ${result.highlights} אטרקציות, ${result.restaurants} מסעדות, ${result.driving} מסלולים, ${result.days} ימים + 3 מלונות`
           : `✓ Seeded: ${result.highlights} highlights, ${result.restaurants} restaurants, ${result.driving} routes, ${result.days} days + 3 hotels`
       );
-    } catch (e: any) {
-      setSeedResult(`✗ ${e.message}`);
+    } catch (e) {
+      setSeedResult(`✗ ${(e as Error).message}`);
     } finally {
       setSeeding(false);
     }

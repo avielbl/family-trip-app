@@ -61,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // onAuthStateChanged below.
   useEffect(() => {
     completeRedirectSignIn().then((err) => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- async result
       if (err) setAuthError(err);
     });
   }, []);

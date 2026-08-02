@@ -66,10 +66,11 @@ export default function ToastNotifications() {
     const prev = prevRestaurantsLen.current;
     if (prev !== null && restaurants.length > prev) {
       const newest = [...restaurants].sort((a, b) =>
-        (b as any).createdAt > (a as any).createdAt ? 1 : -1
+        ((b as { createdAt?: string }).createdAt as string) > ((a as { createdAt?: string }).createdAt as string) ? 1 : -1
       )[0];
       const name = newest?.name || '';
       // Skip if current member added it (best-effort check)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- toast on external Firestore list growth
       addToast(`📍 New restaurant added${name ? ': ' + name : ''}`);
     }
     prevRestaurantsLen.current = restaurants.length;
@@ -81,6 +82,7 @@ export default function ToastNotifications() {
     const prev = prevHighlightsLen.current;
     if (prev !== null && highlights.length > prev) {
       const newest = highlights[highlights.length - 1];
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- toast on external Firestore list growth
       addToast(`⭐ New highlight added${newest?.name ? ': ' + newest.name : ''}`);
     }
     prevHighlightsLen.current = highlights.length;
@@ -93,6 +95,7 @@ export default function ToastNotifications() {
     if (prev !== null && photos.length > prev) {
       const newest = [...photos].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
       const isOwn = newest?.memberId === currentMember?.id;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- toast on external Firestore list growth
       if (!isOwn) addToast('📷 New photo added');
     }
     prevPhotosLen.current = photos.length;
@@ -104,6 +107,7 @@ export default function ToastNotifications() {
     const prev = prevPackingLen.current;
     if (prev !== null && packingItems.length > prev) {
       const newest = packingItems[packingItems.length - 1];
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- toast on external Firestore list growth
       addToast(`🧳 New packing item${newest?.text ? ': ' + newest.text : ''}`);
     }
     prevPackingLen.current = packingItems.length;
@@ -114,6 +118,7 @@ export default function ToastNotifications() {
     if (!initialized.current) return;
     const prev = prevTravelLogLen.current;
     if (prev !== null && travelLog.length > prev) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- toast on external Firestore list growth
       addToast('📖 New travel log entry');
     }
     prevTravelLogLen.current = travelLog.length;

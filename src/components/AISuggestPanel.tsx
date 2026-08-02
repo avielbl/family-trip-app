@@ -13,7 +13,7 @@ import type { AISuggestion } from '../types/ai';
 interface AISuggestPanelProps {
   type: 'restaurant' | 'highlight' | 'passport-stamp';
   context: SuggestContext;
-  onAccept: (items: Record<string, any>[]) => void;
+  onAccept: (items: Record<string, unknown>[]) => void;
 }
 
 function getCategoryIcon(type: string, category?: string): string {
@@ -132,10 +132,10 @@ export default function AISuggestPanel({ type, context, onAccept }: AISuggestPan
                 {suggestions.map((s, i) => (
                   <div key={s.id} className={`ai-suggestion-card ${s.accepted ? 'accepted' : ''}`}>
                     <div className="ai-suggestion-icon">
-                      {s.data.icon ?? getCategoryIcon(s.type, s.data.category)}
+                      {(s.data.icon as string | undefined) ?? getCategoryIcon(s.type, s.data.category as string | undefined)}
                     </div>
                     <div className="ai-suggestion-body">
-                      <div className="ai-suggestion-name">{s.data.name ?? s.data.title ?? '—'}</div>
+                      <div className="ai-suggestion-name">{(s.data.name ?? s.data.title ?? '—') as string}</div>
                       <div className="ai-suggestion-meta">
                         {[s.data.cuisine, s.data.category, s.data.location]
                           .filter(Boolean)

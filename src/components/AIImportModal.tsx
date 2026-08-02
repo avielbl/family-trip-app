@@ -12,7 +12,7 @@ import type { ImportTarget, AIImportResult } from '../types/ai';
 
 interface AIImportModalProps {
   target: ImportTarget;
-  onAccept: (items: Record<string, any>[]) => Promise<void> | void;
+  onAccept: (items: Record<string, unknown>[]) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -64,7 +64,7 @@ export default function AIImportModal({ target, onAccept, onClose }: AIImportMod
       const prompt = buildImportPrompt(target) +
         (pasteText.trim() ? `\n\nAdditional text context:\n${pasteText}` : '');
       const response = await callAI(prompt, files.length ? files : undefined);
-      const parsed = parseImport(response, target);
+      const parsed = parseImport(response);
       if (parsed.length === 0) {
         setError(t('ai.noResults'));
         setModalState('error');
@@ -198,7 +198,7 @@ export default function AIImportModal({ target, onAccept, onClose }: AIImportMod
                 <div key={result.id} className={`ai-result-card ${result.accepted ? 'accepted' : 'rejected'}`}>
                   <div className="ai-result-card-header">
                     <span className="ai-result-card-name">
-                      {result.data.name ?? result.data.airline ?? result.data.title ?? '—'}
+                      {(result.data.name ?? result.data.airline ?? result.data.title ?? '—') as string}
                     </span>
                     <div className="ai-result-toggle">
                       <button

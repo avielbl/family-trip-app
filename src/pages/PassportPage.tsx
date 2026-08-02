@@ -54,6 +54,23 @@ const PassportPage: React.FC = () => {
     ).length,
   [passportStamps, earnedStamps, currentMember]);
 
+  // Legacy day-based earned set — computed unconditionally so hook order is
+  // stable regardless of which rendering branch is taken below.
+  const earnedDays = useMemo(() => {
+    const earned = new Set<number>();
+    if (highlights) {
+      highlights.forEach((highlight) => {
+        if (highlight.completed) {
+          const dayIndex = highlight.dayIndex;
+          if (dayIndex !== undefined && dayIndex >= 0 && dayIndex < totalDays) {
+            earned.add(dayIndex);
+          }
+        }
+      });
+    }
+    return earned;
+  }, [highlights, totalDays]);
+
   if (useNewSystem) {
     return (
       <div className="passport-page" dir={isHebrew ? 'rtl' : 'ltr'}>
@@ -186,21 +203,6 @@ const PassportPage: React.FC = () => {
   }
 
   // ─── Legacy day-based system ──────────────────────────────────────────────
-
-  const earnedDays = useMemo(() => {
-    const earned = new Set<number>();
-    if (highlights) {
-      highlights.forEach((highlight) => {
-        if (highlight.completed) {
-          const dayIndex = highlight.dayIndex;
-          if (dayIndex !== undefined && dayIndex >= 0 && dayIndex < totalDays) {
-            earned.add(dayIndex);
-          }
-        }
-      });
-    }
-    return earned;
-  }, [highlights, totalDays]);
 
   const stampsCollected = earnedDays.size;
   const allCollected = totalDays > 0 && stampsCollected === totalDays;
