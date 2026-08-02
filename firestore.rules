@@ -2,10 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check if user is the trip admin
+    // Helper: user is an admin of the given family
+    function isFamilyAdminOf(familyId) {
+      return request.auth.uid in
+        get(/databases/$(database)/documents/families/$(familyId)).data.adminUids;
+    }
+
+    // Helper: user may administer the trip — either the trip's own adminUid,
+    // or an admin of the family the trip belongs to.
     function isAdmin(tripCode) {
-      return request.auth != null &&
-        get(/databases/$(database)/documents/trips/$(tripCode)).data.adminUid == request.auth.uid;
+      let trip = get(/databases/$(database)/documents/trips/$(tripCode)).data;
+      return request.auth != null && (
+        ('adminUid' in trip && trip.adminUid == request.auth.uid) ||
+        ('familyId' in trip && isFamilyAdminOf(trip.familyId))
+      );
     }
 
     // User profiles — each user can only read/write their own
@@ -13,14 +23,28 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Families — the shared home that owns the trip list and active trip
+    match /families/{familyId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      // Admins manage the family; a family with no admins yet is claimable
+      allow update: if request.auth != null && (
+        request.auth.uid in resource.data.adminUids ||
+        resource.data.adminUids.size() == 0
+      );
+    }
+
     // Trip config
     match /trips/{tripCode} {
       allow read: if request.auth != null;
-      // Write trip config: admin or during initial creation (no adminUid set yet)
-      allow write: if request.auth != null && (
+      // Any authed user may create a new trip (doc must not already exist)
+      allow create: if request.auth != null;
+      // Update/delete: trip admin, unclaimed trip (no adminUid), or family admin
+      allow update, delete: if request.auth != null && (
         !('adminUid' in resource.data) ||
         resource.data.adminUid == null ||
-        resource.data.adminUid == request.auth.uid
+        resource.data.adminUid == request.auth.uid ||
+        ('familyId' in resource.data && isFamilyAdminOf(resource.data.familyId))
       );
 
       // Itinerary subcollections — admin writes, member reads
@@ -49,6 +73,15 @@ service cloud.firestore {
         allow write: if isAdmin(tripCode);
       }
       match /restaurants/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      match /quizQuestions/{doc} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin(tripCode);
+      }
+      // Trip settings (e.g. shared AI config) — members read, admin writes
+      match /settings/{doc} {
         allow read: if request.auth != null;
         allow write: if isAdmin(tripCode);
       }

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { FamilyProvider } from './context/FamilyContext';
 import { TripProvider, useTripContext } from './context/TripContext';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
@@ -20,6 +21,8 @@ import TravelLogPage from './pages/TravelLogPage';
 import WeatherPage from './pages/WeatherPage';
 import TripMapPage from './pages/TripMapPage';
 import ItineraryPage from './pages/ItineraryPage';
+import TripsPage from './pages/TripsPage';
+import ImportPage from './pages/ImportPage';
 import './i18n';
 
 function AppRoutes() {
@@ -73,8 +76,11 @@ function AppRoutes() {
         <Route path="/map" element={<TripMapPage />} />
         <Route path="/itinerary" element={<ItineraryPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/trips" element={<TripsPage />} />
+        <Route path="/import" element={<ImportPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
+      <Route path="/trips/new" element={<SetupPage />} />
       <Route path="/join/:tripCode" element={<JoinPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -85,9 +91,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <TripProvider>
-          <AppRoutes />
-        </TripProvider>
+        <FamilyProvider>
+          <TripProvider>
+            <AppRoutes />
+          </TripProvider>
+        </FamilyProvider>
       </AuthProvider>
     </BrowserRouter>
   );

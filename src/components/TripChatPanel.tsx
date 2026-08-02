@@ -152,8 +152,8 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         id: 'welcome',
         role: 'assistant',
         content: isRTL
-          ? 'שלום! אני עוזר הטיול של TripIt 🏛️\nאני יכול לענות על שאלות על יוון, להמליץ על אטרקציות ומסעדות, ולעזור לתכנן מסלולים. מה תרצה לדעת?'
-          : 'Hi! I\'m TripIt\'s AI travel assistant 🏛️\nI can answer questions about Greece, recommend attractions and restaurants, and help plan routes. What would you like to know?',
+          ? `שלום! אני עוזר הטיול של TripIt ${config?.flagEmoji ?? '✈️'}\nאני יכול לענות על שאלות על ${config?.destinationHe ?? config?.destination ?? 'הטיול'}, להמליץ על אטרקציות ומסעדות, ולעזור לתכנן מסלולים. מה תרצה לדעת?`
+          : `Hi! I'm TripIt's AI travel assistant ${config?.flagEmoji ?? '✈️'}\nI can answer questions about ${config?.destination ?? 'your trip'}, recommend attractions and restaurants, and help plan routes. What would you like to know?`,
         actions: [],
       }]);
     }

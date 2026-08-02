@@ -4,12 +4,27 @@ import { useTranslation } from 'react-i18next';
 import { LogIn, Loader, AlertCircle, Smartphone } from 'lucide-react';
 import { useAuthContext } from '../context/AuthContext';
 import { useTripContext } from '../context/TripContext';
+import { getTripConfig } from '../firebase/tripService';
+
+// After joining, adopt the trip's family (if any) and hard-reload so
+// FamilyContext re-resolves from the fresh localStorage state.
+async function finishJoin(tripCode: string): Promise<void> {
+  try {
+    const config = await getTripConfig(tripCode);
+    if (config?.familyId) {
+      localStorage.setItem('familyId', config.familyId);
+    }
+  } catch {
+    // Best-effort: joining still works without the family pointer.
+  }
+  window.location.assign('/');
+}
 
 export default function JoinPage() {
   const { tripCode: codeParam } = useParams<{ tripCode: string }>();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { firebaseUser, signInWithGoogle, authLoading } = useAuthContext();
+  const { firebaseUser, signInWithGoogle, authLoading, authError } = useAuthContext();
   const { setTripCode, tripCode: activeTripCode } = useTripContext();
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState('');
@@ -22,14 +37,15 @@ export default function JoinPage() {
       navigate('/');
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kick off the async join once codeParam is known
     setJoining(true);
     setTripCode(codeParam).then((ok) => {
       if (ok) {
-        navigate('/');
+        void finishJoin(codeParam);
       } else {
         setError(isHe ? 'קוד טיול לא תקין' : 'Invalid trip code');
+        setJoining(false);
       }
-      setJoining(false);
     });
   }, [firebaseUser, codeParam]);
 
@@ -45,7 +61,7 @@ export default function JoinPage() {
   return (
     <div className="join-page">
       <div className="join-hero">
-        <div className="setup-emoji">🇬🇷</div>
+        <div className="setup-emoji">✈️</div>
         <h1>{t('app.title')}</h1>
         <p className="join-subtitle">
           {isHe ? 'הוזמנת להצטרף לטיול המשפחתי!' : "You've been invited to join the family trip!"}
@@ -65,7 +81,16 @@ export default function JoinPage() {
               ? 'התחבר עם גוגל כדי להצטרף לטיול'
               : 'Sign in with Google to join the trip'}
           </p>
-          <button className="google-signin-btn" onClick={signInWithGoogle}>
+          {authError && (
+            <p className="setup-error">
+              <AlertCircle size={16} />{' '}
+              {isHe ? `הכניסה נכשלה: ${authError}` : `Sign-in failed: ${authError}`}
+            </p>
+          )}
+          <button
+            className="google-signin-btn"
+            onClick={() => signInWithGoogle().catch(() => { /* surfaced via authError */ })}
+          >
             <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
               <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
               <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
@@ -84,7 +109,7 @@ export default function JoinPage() {
             onClick={() => {
               if (codeParam) {
                 setTripCode(codeParam).then((ok) => {
-                  if (ok) navigate('/');
+                  if (ok) void finishJoin(codeParam);
                   else setError(isHe ? 'קוד טיול לא תקין' : 'Invalid trip code');
                 });
               }

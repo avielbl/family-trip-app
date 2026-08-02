@@ -29,6 +29,10 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
+      # NOTE: firestore.rules is NOT deployed from CI — the CI service account
+      # lacks the Firebase Rules Admin role (grant it in Cloud IAM to automate
+      # this). Until then, publish rule changes manually in the Firebase
+      # Console → Firestore → Rules.
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:

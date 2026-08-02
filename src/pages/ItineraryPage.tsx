@@ -37,6 +37,23 @@ interface DaySuggestion {
   tipsHe: string;
 }
 
+const EMPTY_SUGGESTION: DaySuggestion = {
+  title: '',
+  titleHe: '',
+  location: '',
+  locationHe: '',
+  morning: [],
+  morningHe: [],
+  afternoon: [],
+  afternoonHe: [],
+  evening: [],
+  eveningHe: [],
+  restaurants: [],
+  restaurantsHe: [],
+  tips: '',
+  tipsHe: '',
+};
+
 const GREECE_SUGGESTIONS: DaySuggestion[] = [
   // Day 0 — March 24: Arrival + Drive to Ioannina
   {
@@ -265,6 +282,11 @@ export default function ItineraryPage() {
   const isRTL = i18n.language === 'he';
   const { days, hotels, flights, driving, highlights, restaurants, config } = useTripContext();
 
+  // Curated suggestions are Greece-specific — only surface them on a Greece trip.
+  const isGreeceTrip =
+    config?.countryCode === 'GR' ||
+    (config?.destination ?? '').toLowerCase().includes('greece');
+
   const tripStart = config ? parseISO(config.startDate) : parseISO('2026-03-24');
   const totalDays = config
     ? Math.round((parseISO(config.endDate).getTime() - parseISO(config.startDate).getTime()) / 86400000) + 1
@@ -280,11 +302,13 @@ export default function ItineraryPage() {
       const dayDriving = driving.filter((d) => d.dayIndex === i);
       const dayHighlights = highlights.filter((h) => h.dayIndex === i);
       const dayRestaurants = restaurants.filter((r) => r.dayIndex === i);
-      const suggestion = GREECE_SUGGESTIONS[Math.min(i, GREECE_SUGGESTIONS.length - 1)];
+      const suggestion = isGreeceTrip
+        ? GREECE_SUGGESTIONS[Math.min(i, GREECE_SUGGESTIONS.length - 1)]
+        : EMPTY_SUGGESTION;
 
       return { dayIndex: i, date, tripDay, suggestion, hotel, flights: dayFlights, driving: dayDriving, highlights: dayHighlights, restaurants: dayRestaurants };
     });
-  }, [days, hotels, flights, driving, highlights, restaurants, totalDays, tripStart]);
+  }, [days, hotels, flights, driving, highlights, restaurants, totalDays, tripStart, isGreeceTrip]);
 
   return (
     <div className="itinerary-page">
@@ -293,8 +317,8 @@ export default function ItineraryPage() {
       </h1>
       <p className="page-subtitle">
         {isRTL
-          ? `${totalDays} ימי הרפתקה ביוון – ${format(tripStart, 'dd/MM/yyyy')}`
-          : `${totalDays} days of adventure in Greece – ${format(tripStart, 'MMM d, yyyy')}`}
+          ? `${totalDays} ימי הרפתקה ב${config?.destinationHe ?? config?.destination ?? 'טיול'} – ${format(tripStart, 'dd/MM/yyyy')}`
+          : `${totalDays} days of adventure in ${config?.destination ?? 'your trip'} – ${format(tripStart, 'MMM d, yyyy')}`}
       </p>
 
       <div className="itinerary-table-container">

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Mountain } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
-import type { Hotel } from '../types/trip';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -33,9 +32,12 @@ interface SkiForecast {
   error?: string;
 }
 
-// ─── Greek city coordinates fallback ─────────────────────────────────────────
+// ─── City coordinate resolution ──────────────────────────────────────────────
+// Hotels without lat/lng are resolved via the free Open-Meteo geocoding API and
+// cached in localStorage, so weather follows the active trip automatically.
+// The table below is just a pre-seeded cache for common Greek cities.
 
-const GREEK_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+const SEED_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'athens': { lat: 37.9838, lng: 23.7275 },
   'athina': { lat: 37.9838, lng: 23.7275 },
   'thessaloniki': { lat: 40.6401, lng: 22.9444 },
@@ -60,9 +62,44 @@ const GREEK_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'naxos': { lat: 37.1036, lng: 25.3764 },
 };
 
-// ─── Greek Ski Resorts ────────────────────────────────────────────────────────
+const GEOCODE_CACHE_KEY = 'weatherGeocodeCache';
 
-const GREEK_SKI_RESORTS = [
+function readGeocodeCache(): Record<string, { lat: number; lng: number }> {
+  try {
+    return JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+async function geocodeCity(city: string): Promise<{ lat: number; lng: number } | null> {
+  const key = city.toLowerCase().trim();
+  if (!key) return null;
+  const seeded = getCityCoords(city);
+  if (seeded) return seeded;
+  const cache = readGeocodeCache();
+  if (cache[key]) return cache[key];
+  try {
+    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+    url.searchParams.set('name', city);
+    url.searchParams.set('count', '1');
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    const hit = data.results?.[0];
+    if (!hit) return null;
+    const coords = { lat: hit.latitude as number, lng: hit.longitude as number };
+    cache[key] = coords;
+    localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+    return coords;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Ski Resorts (shown only when the trip is actually nearby) ───────────────
+
+const SKI_RESORTS = [
   { name: 'Kaimaktsalan Ski Resort', nameHe: 'אתר סקי קיימקצלן', lat: 40.8395, lng: 21.7780, nearCity: 'Edessa/Aridaia' },
   { name: 'Seli Ski Resort', nameHe: 'אתר סקי סלי', lat: 40.2167, lng: 22.1833, nearCity: 'Veroia' },
   { name: 'Vasilitsa Ski Resort', nameHe: 'אתר סקי וסיליצה', lat: 40.0183, lng: 21.3417, nearCity: 'Grevena' },
@@ -83,15 +120,13 @@ function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): num
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Find ski resorts within 120km of any hotel
-function findNearbySkiResorts(hotels: Hotel[]) {
-  const nearby: typeof GREEK_SKI_RESORTS = [];
-  for (const resort of GREEK_SKI_RESORTS) {
-    for (const hotel of hotels) {
-      const lat = hotel.lat ?? getCityCoords(hotel.city)?.lat;
-      const lng = hotel.lng ?? getCityCoords(hotel.city)?.lng;
-      if (!lat || !lng) continue;
-      if (distanceKm(lat, lng, resort.lat, resort.lng) < 120) {
+// Find ski resorts within 120km of any resolved trip location. If the trip
+// isn't near any listed resort, the ski section simply doesn't render.
+function findNearbySkiResorts(locations: Array<{ lat: number; lng: number }>) {
+  const nearby: typeof SKI_RESORTS = [];
+  for (const resort of SKI_RESORTS) {
+    for (const loc of locations) {
+      if (distanceKm(loc.lat, loc.lng, resort.lat, resort.lng) < 120) {
         if (!nearby.find((r) => r.name === resort.name)) {
           nearby.push(resort);
         }
@@ -99,16 +134,12 @@ function findNearbySkiResorts(hotels: Hotel[]) {
       }
     }
   }
-  // Always show Kaimaktsalan (closest to the actual trip: Palaios Agios Athanasios / Edessa)
-  if (!nearby.find((r) => r.name === 'Kaimaktsalan Ski Resort')) {
-    nearby.push(GREEK_SKI_RESORTS[0]);
-  }
   return nearby;
 }
 
 function getCityCoords(city: string): { lat: number; lng: number } | null {
   const key = city.toLowerCase().trim();
-  for (const [name, coords] of Object.entries(GREEK_CITY_COORDS)) {
+  for (const [name, coords] of Object.entries(SEED_CITY_COORDS)) {
     if (key.includes(name) || name.includes(key)) return coords;
   }
   return null;
@@ -151,7 +182,7 @@ async function fetchWeather(lat: number, lng: number): Promise<DailyWeather[]> {
     'daily',
     'weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,windspeed_10m_max'
   );
-  url.searchParams.set('timezone', 'Europe/Athens');
+  url.searchParams.set('timezone', 'auto');
   url.searchParams.set('forecast_days', '14');
 
   const res = await fetch(url.toString());
@@ -189,80 +220,91 @@ export default function WeatherPage() {
     }
   });
 
-  const tripStart = config ? parseISO(config.startDate) : parseISO('2026-03-24');
-  const tripEnd = config ? parseISO(config.endDate) : parseISO('2026-04-04');
+  const tripStart = config ? parseISO(config.startDate) : null;
+  const tripEnd = config ? parseISO(config.endDate) : null;
 
-  // Unique hotel locations (deduplicated by city)
-  const hotelLocations = useMemo(() => {
+  // Cities the active trip actually visits: every hotel city (deduplicated),
+  // plus chat-added extras; fall back to the trip's destination when the trip
+  // has no hotels yet. Coordinates come from the hotel doc when present,
+  // otherwise from geocoding.
+  const wantedLocations = useMemo(() => {
     const seen = new Set<string>();
-    return hotels
-      .map((h) => {
-        const lat = h.lat ?? getCityCoords(h.city)?.lat;
-        const lng = h.lng ?? getCityCoords(h.city)?.lng;
-        if (!lat || !lng) return null;
-        const key = h.city.toLowerCase();
-        if (seen.has(key)) return null;
-        seen.add(key);
-        return { location: h.city || h.name, lat, lng, hotel: h };
-      })
-      .filter(Boolean) as { location: string; lat: number; lng: number; hotel: Hotel }[];
-  }, [hotels]);
-
-  // Merge hotel locations + chat-added extra locations (deduplicated by city)
-  const locationsToFetch = useMemo(() => {
-    const base = hotelLocations.length > 0
-      ? hotelLocations
-      : [{ location: 'Athens', lat: 37.9838, lng: 23.7275, hotel: null as unknown as Hotel }];
-    const seen = new Set(base.map((l) => l.location.toLowerCase()));
-    const extras = extraLocations
-      .filter((e) => !seen.has(e.city.toLowerCase()))
-      .map((e) => {
-        const coords = e.lat && e.lng ? { lat: e.lat, lng: e.lng } : getCityCoords(e.city);
-        if (!coords) return null;
-        seen.add(e.city.toLowerCase());
-        return { location: e.city, lat: coords.lat, lng: coords.lng, hotel: null as unknown as Hotel };
-      })
-      .filter(Boolean) as typeof base;
-    return [...base, ...extras];
-  }, [hotelLocations, extraLocations]);
-
-  // Find nearby ski resorts
-  const nearbySkiResorts = useMemo(() => findNearbySkiResorts(hotels), [hotels]);
+    const wanted: Array<{ label: string; city: string; lat?: number; lng?: number }> = [];
+    for (const h of hotels) {
+      const label = h.city || h.name;
+      const key = label.toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      wanted.push({ label, city: label, lat: h.lat, lng: h.lng });
+    }
+    for (const e of extraLocations) {
+      const key = e.city.toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      wanted.push({ label: e.city, city: e.city, lat: e.lat, lng: e.lng });
+    }
+    if (wanted.length === 0 && config?.destination) {
+      wanted.push({ label: config.destination, city: config.destination });
+    }
+    return wanted;
+  }, [hotels, extraLocations, config?.destination]);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     const fetchAll = async () => {
+      // Resolve coordinates (hotel doc → seed table → geocoding API)
+      const resolved = (
+        await Promise.all(
+          wantedLocations.map(async (loc) => {
+            const coords =
+              loc.lat && loc.lng
+                ? { lat: loc.lat, lng: loc.lng }
+                : await geocodeCity(loc.city);
+            if (!coords) return null;
+            return { location: loc.label, lat: coords.lat, lng: coords.lng };
+          })
+        )
+      ).filter(Boolean) as Array<{ location: string; lat: number; lng: number }>;
+
       // Fetch all location forecasts in parallel
       const locationResults = await Promise.all(
-        locationsToFetch.map(async (loc) => {
+        resolved.map(async (loc) => {
           try {
             const days = await fetchWeather(loc.lat, loc.lng);
-            return { location: loc.location, lat: loc.lat, lng: loc.lng, days };
+            return { ...loc, days };
           } catch (e) {
-            return { location: loc.location, lat: loc.lat, lng: loc.lng, days: [], error: String(e) };
+            return { ...loc, days: [], error: String(e) };
           }
         })
       );
+      if (cancelled) return;
       setForecasts(locationResults);
 
-      // Fetch ski resort forecast (Parnassos as primary)
-      const skiResort = nearbySkiResorts[0];
+      // Ski forecast only when the trip is actually near a listed resort
+      const skiResort = findNearbySkiResorts(resolved)[0];
       if (skiResort) {
         try {
           const days = await fetchWeather(skiResort.lat, skiResort.lng);
-          setSkiForecast({ resort: isRTL ? skiResort.nameHe : skiResort.name, lat: skiResort.lat, lng: skiResort.lng, days });
+          if (!cancelled) setSkiForecast({ resort: isRTL ? skiResort.nameHe : skiResort.name, lat: skiResort.lat, lng: skiResort.lng, days });
         } catch (e) {
-          setSkiForecast({ resort: skiResort.name, lat: skiResort.lat, lng: skiResort.lng, days: [], error: String(e) });
+          if (!cancelled) setSkiForecast({ resort: skiResort.name, lat: skiResort.lat, lng: skiResort.lng, days: [], error: String(e) });
         }
+      } else if (!cancelled) {
+        setSkiForecast(null);
       }
 
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     };
     fetchAll();
-  }, [locationsToFetch, nearbySkiResorts, isRTL]);
+    return () => {
+      cancelled = true;
+    };
+  }, [wantedLocations, isRTL]);
 
   // Filter days within trip window (or nearby)
   function filterTripDays(days: DailyWeather[]): DailyWeather[] {
+    if (!tripStart || !tripEnd) return [];
     return days.filter((d) => {
       const date = parseISO(d.time);
       return isWithinInterval(date, { start: tripStart, end: tripEnd });
@@ -291,11 +333,13 @@ export default function WeatherPage() {
       <h1 className="page-title">
         {isRTL ? 'תחזית מזג האוויר' : 'Weather Forecast'}
       </h1>
-      <p className="page-subtitle">
-        {isRTL
-          ? `תחזית לתאריכי הטיול: ${format(tripStart, 'dd/MM')} – ${format(tripEnd, 'dd/MM/yyyy')}`
-          : `Trip dates: ${format(tripStart, 'MMM d')} – ${format(tripEnd, 'MMM d, yyyy')}`}
-      </p>
+      {tripStart && tripEnd && (
+        <p className="page-subtitle">
+          {isRTL
+            ? `תחזית לתאריכי הטיול: ${format(tripStart, 'dd/MM')} – ${format(tripEnd, 'dd/MM/yyyy')}`
+            : `Trip dates: ${format(tripStart, 'MMM d')} – ${format(tripEnd, 'MMM d, yyyy')}`}
+        </p>
+      )}
 
       {/* ─── Location Forecasts ─────────────────────────────── */}
       {forecasts.map((fc) => {
@@ -339,8 +383,8 @@ export default function WeatherPage() {
           </div>
           <p className="ski-note">
             {isRTL
-              ? 'קיימקצלן (הר ווראס) הוא אתר הסקי הקרוב ביותר לאזור הטיול — ליד אדסה ופלאיוס אגיוס אתנאסיוס. תחזית שלג:'
-              : 'Kaimaktsalan (Mt. Voras) is the ski resort closest to the trip — near Edessa & Palaios Agios Athanasios. Snow forecast:'}
+              ? `${skiForecast.resort} הוא אתר הסקי הקרוב ביותר לאזור הטיול. תחזית שלג:`
+              : `${skiForecast.resort} is the ski resort closest to the trip. Snow forecast:`}
           </p>
 
           {skiForecast.error ? (

@@ -1,72 +1,133 @@
-import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Upload, FileText, Check, Loader, AlertCircle, Plus, LogIn } from 'lucide-react';
+import { AlertCircle, Loader, Plus, LogIn, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
+import { useFamilyContext } from '../context/FamilyContext';
 import { useAuthContext } from '../context/AuthContext';
-import { saveTripConfig, importTripData } from '../firebase/tripService';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import type { TripConfig, FamilyMember } from '../types/trip';
+import { saveTripDays } from '../firebase/tripService';
+import { updateMemberTemplates } from '../firebase/familyService';
+import BookingImport from '../components/BookingImport';
+import type { TripConfig, TripDay, FamilyMember } from '../types/trip';
+
+type WizardMode = 'choice' | 'join' | 'create' | 'members' | 'upload';
+
+// A roster row: the family-level member plus whether they join THIS trip.
+interface RosterRow {
+  member: FamilyMember;
+  included: boolean;
+  isNew: boolean; // added in this wizard session (not yet in the family roster)
+}
+
+function makeDefaultRoster(): RosterRow[] {
+  const defaults: Array<Pick<FamilyMember, 'emoji' | 'deviceType'>> = [
+    { emoji: '👨', deviceType: 'phone' },
+    { emoji: '👩', deviceType: 'phone' },
+    { emoji: '🧒', deviceType: 'phone' },
+    { emoji: '🧒', deviceType: 'phone' },
+    { emoji: '👶', deviceType: 'tablet' },
+  ];
+  return defaults.map((d, i) => ({
+    member: { id: `member-${i}`, name: '', nameHe: '', emoji: d.emoji, deviceType: d.deviceType },
+    included: true,
+    isNew: true,
+  }));
+}
+
+const MS_PER_DAY = 86400000;
+
+function buildDayStubs(startDate: string, endDate: string, location: string): TripDay[] {
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
+  const dayCount = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1;
+
+  const days: TripDay[] = [];
+  for (let i = 0; i < dayCount; i++) {
+    const date = new Date(start.getTime() + i * MS_PER_DAY);
+    days.push({
+      dayIndex: i,
+      date: date.toISOString().slice(0, 10),
+      title: `Day ${i + 1}`,
+      titleHe: `יום ${i + 1}`,
+      location,
+      flights: [],
+      hotels: [],
+      driving: [],
+      highlights: [],
+      restaurants: [],
+    });
+  }
+  return days;
+}
 
 export default function SetupPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { setTripCode, tripCode } = useTripContext();
-  const { firebaseUser, signInWithGoogle, authLoading } = useAuthContext();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [mode, setMode] = useState<'choice' | 'join' | 'create' | 'upload'>('choice');
-  const [googleSigningIn, setGoogleSigningIn] = useState(false);
-  const [googleError, setGoogleError] = useState('');
-  const [joinCode, setJoinCode] = useState('');
-  const [joinError, setJoinError] = useState('');
-  const [newTripCode, setNewTripCode] = useState('');
-  const [tripName, setTripName] = useState('Greece 2026');
-  const [members, setMembers] = useState<Partial<FamilyMember>[]>([
-    { name: '', nameHe: '', emoji: '👨', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '👩', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '🧒', deviceType: 'phone' },
-    { name: '', nameHe: '', emoji: '👶', deviceType: 'tablet' },
-  ]);
-  const [files, setFiles] = useState<File[]>([]);
-  const [parsing, setParsing] = useState(false);
-  const [parsedData, setParsedData] = useState<string>('');
-  const [parseError, setParseError] = useState('');
-  const [apiKey, setApiKey] = useState(localStorage.getItem('claudeApiKey') || '');
-  const [creating, setCreating] = useState(false);
+  const location = useLocation();
+  const { setTripCode, tripCode, browseTrip } = useTripContext();
+  const { family, familyId, familyLoading, recoveryError, recoveryDiag, registerTrip } =
+    useFamilyContext();
+  const { firebaseUser, authLoading, authError, signInWithGoogle, signOutUser } = useAuthContext();
 
   const isHe = i18n.language === 'he';
+  // In-app usage (integrator routes /trips/new here): skip the first-run
+  // choice screen and start straight at trip details.
+  const inApp = location.pathname === '/trips/new';
 
-  // When user signs in with Google, check if their profile has a saved tripCode
+  const [mode, setMode] = useState<WizardMode>(inApp ? 'create' : 'choice');
+
+  // Nothing to set up: a trip is already active (e.g. resolved after this
+  // page mounted, or a stale /setup URL) — go to it.
   useEffect(() => {
-    if (!firebaseUser || tripCode) return;
-    (async () => {
-      const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-      if (snap.exists()) {
-        const savedCode = snap.data().tripCode as string | undefined;
-        if (savedCode) {
-          const ok = await setTripCode(savedCode);
-          if (ok) { navigate('/'); return; }
-        }
-      }
-      // Signed in but no saved trip → pre-fill join mode
-      setMode('join');
-    })();
-  }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleGoogleSignIn() {
-    setGoogleError('');
-    setGoogleSigningIn(true);
-    try {
-      await signInWithGoogle();
-      // useEffect above will react to firebaseUser change
-    } catch (e: any) {
-      setGoogleError(e.message);
-      setGoogleSigningIn(false);
+    if (mode === 'choice' && tripCode) {
+      navigate('/', { replace: true });
     }
-  }
+  }, [mode, tripCode, navigate]);
+
+  // Join step
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [signingIn, setSigningIn] = useState(false);
+
+  // Create step (trip details)
+  const [newTripCode, setNewTripCode] = useState('');
+  const [tripName, setTripName] = useState('');
+  const [destination, setDestination] = useState('');
+  const [destinationHe, setDestinationHe] = useState('');
+  const [flagEmoji, setFlagEmoji] = useState('✈️');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // Members step — the family roster is the baseline. Each row can be edited
+  // (edits sync back to the family collection) and toggled for THIS trip.
+  const [roster, setRoster] = useState<RosterRow[]>(() =>
+    family?.memberTemplates?.length
+      ? family.memberTemplates.map((m) => ({ member: { ...m }, included: true, isNew: false }))
+      : makeDefaultRoster()
+  );
+
+  // The family doc can finish loading after mount (e.g. direct navigation to
+  // /trips/new). Refresh the roster from the templates as long as the user
+  // hasn't reached the members step yet.
+  const rosterSeeded = useRef(!!family?.memberTemplates?.length);
+  useEffect(() => {
+    if (rosterSeeded.current) return;
+    if (mode === 'members' || mode === 'upload') return;
+    if (family?.memberTemplates?.length) {
+      setRoster(family.memberTemplates.map((m) => ({ member: { ...m }, included: true, isNew: false })));
+      rosterSeeded.current = true;
+    }
+  }, [family, mode]);
+  // Default checked on first-run / when the family has no active trip.
+  const [makeActive, setMakeActive] = useState(() => !family?.activeTripCode);
+
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createdCode, setCreatedCode] = useState('');
+
+  const dateOrderValid = !startDate || !endDate || endDate >= startDate;
+  const detailsValid =
+    newTripCode.trim().length > 0 && !!startDate && !!endDate && endDate >= startDate;
 
   async function handleJoin() {
     setJoinError('');
@@ -79,173 +140,167 @@ export default function SetupPage() {
   }
 
   async function handleCreateTrip() {
-    if (!newTripCode.trim()) return;
+    if (!detailsValid) return;
     setCreating(true);
+    setCreateError('');
     try {
+      const code = newTripCode.trim().toLowerCase();
+
+      // Full family roster (with edits, defaults applied) — ids stay stable
+      // across trips so scoreboards/photos/email matching remain consistent.
+      const fullRoster: FamilyMember[] = roster.map(({ member }, i) => ({
+        ...member,
+        name: member.name || `Member ${i + 1}`,
+        nameHe: member.nameHe || member.name || `בן משפחה ${i + 1}`,
+        emoji: member.emoji || '👤',
+        deviceType: member.deviceType || 'phone',
+      }));
+      const participants = fullRoster.filter((_, i) => roster[i].included);
+
+      if (participants.length === 0) {
+        setCreateError(isHe ? 'יש לבחור לפחות בן משפחה אחד לטיול' : 'Select at least one family member for this trip');
+        setCreating(false);
+        return;
+      }
+
       const config: TripConfig = {
-        tripCode: newTripCode.trim().toLowerCase(),
+        tripCode: code,
         tripName,
-        startDate: '2026-03-24',
-        endDate: '2026-04-04',
-        familyMembers: members.map((m, i) => ({
-          id: `member-${i}`,
-          name: m.name || `Member ${i + 1}`,
-          nameHe: m.nameHe || m.name || `בן משפחה ${i + 1}`,
-          emoji: m.emoji || '👤',
-          deviceType: m.deviceType || 'phone',
-        })),
+        destination,
+        destinationHe,
+        flagEmoji,
+        startDate,
+        endDate,
+        familyMembers: participants,
+        ...(familyId ? { familyId } : {}),
+        status: 'upcoming',
+        createdAt: new Date().toISOString(),
       };
-      await saveTripConfig(config);
-      await setTripCode(config.tripCode);
+
+      await registerTrip(config, makeActive);
+
+      // Sync edits (and newly added members) back to the family roster —
+      // including members not participating in this trip. registerTrip may
+      // have just created the family, so re-read the id from localStorage.
+      const resolvedFamilyId = familyId ?? localStorage.getItem('familyId');
+      if (resolvedFamilyId) {
+        await updateMemberTemplates(resolvedFamilyId, fullRoster);
+      }
+
+      await saveTripDays(code, buildDayStubs(startDate, endDate, destination));
+
+      if (!tripCode) {
+        // First-run: no current trip on this device yet.
+        await setTripCode(code);
+      } else {
+        browseTrip(code);
+      }
+
+      setCreatedCode(code);
       setMode('upload');
-    } catch (err: any) {
-      setParseError(err.message);
+    } catch (err) {
+      setCreateError((err as Error).message);
     } finally {
       setCreating(false);
     }
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files) {
-      setFiles(Array.from(e.target.files));
-    }
-  }
-
-  async function fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Extract base64 part after data:...;base64,
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function handleParse() {
-    if (!files.length) return;
-    if (!apiKey) {
-      setParseError(isHe ? 'נדרש מפתח Claude API' : 'Claude API key required');
-      return;
-    }
-    localStorage.setItem('claudeApiKey', apiKey);
-    setParsing(true);
-    setParseError('');
-
-    try {
-      const imageContents = await Promise.all(
-        files.map(async (file) => {
-          const base64 = await fileToBase64(file);
-          const mediaType = file.type || 'image/png';
-          return {
-            type: 'image' as const,
-            source: {
-              type: 'base64' as const,
-              media_type: mediaType,
-              data: base64,
-            },
-          };
-        })
-      );
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4096,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                ...imageContents,
-                {
-                  type: 'text',
-                  text: `Extract all travel booking information from these confirmation screenshots/PDFs. Return a JSON object with the following structure:
-{
-  "flights": [{ "id": "flight-1", "dayIndex": 0, "airline": "", "flightNumber": "", "departureAirport": "", "departureAirportCode": "", "arrivalAirport": "", "arrivalAirportCode": "", "departureTime": "ISO datetime", "arrivalTime": "ISO datetime", "terminal": "", "gate": "", "confirmationCode": "" }],
-  "hotels": [{ "id": "hotel-1", "dayIndexStart": 0, "dayIndexEnd": 3, "name": "", "address": "", "city": "", "checkIn": "ISO datetime", "checkOut": "ISO datetime", "confirmationCode": "" }]
-}
-
-Trip starts March 24, 2026 (dayIndex 0) and ends April 4, 2026 (dayIndex 11).
-Calculate dayIndex based on the dates relative to March 24.
-Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
-                },
-              ],
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`API error: ${response.status} - ${err}`);
-      }
-
-      const data = await response.json();
-      const text = data.content[0]?.text || '';
-      setParsedData(text);
-    } catch (err: any) {
-      setParseError(err.message);
-    } finally {
-      setParsing(false);
-    }
-  }
-
-  async function handleSaveParsed() {
-    if (!parsedData || !tripCode) return;
-    try {
-      const parsed = JSON.parse(parsedData);
-      await importTripData(tripCode, parsed);
-      navigate('/');
-    } catch (err: any) {
-      setParseError(`Invalid JSON: ${err.message}`);
-    }
-  }
-
-  // Choice screen
+  // Choice screen (first-run only). Sign-in comes first: an existing user
+  // who cleared local data recovers their family and trips just by signing in.
   if (mode === 'choice') {
+    if (authLoading || (firebaseUser && familyLoading)) {
+      return (
+        <div className="setup-page">
+          <div className="setup-hero">
+            <div className="setup-emoji">✈️</div>
+            <h1>{t('app.title')}</h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+            <Loader size={20} className="spin" />
+            <span>{isHe ? 'משחזר את הטיולים שלך...' : 'Restoring your trips...'}</span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="setup-page">
         <div className="setup-hero">
-          <div className="setup-emoji">🇬🇷</div>
+          <div className="setup-emoji">✈️</div>
           <h1>{t('app.title')}</h1>
           <p>{t('app.subtitle')}</p>
         </div>
 
         <div className="setup-choices">
-          {!authLoading && !firebaseUser && (
+          {!firebaseUser ? (
             <>
+              <p className="setup-description" style={{ textAlign: 'center' }}>
+                {isHe
+                  ? 'כבר יש לכם טיולים? התחברו כדי לשחזר אותם'
+                  : 'Already have trips? Sign in to restore them'}
+              </p>
               <button
                 className="google-signin-btn"
-                onClick={handleGoogleSignIn}
-                disabled={googleSigningIn}
-                style={{ width: '100%', justifyContent: 'center', marginBottom: '8px' }}
+                disabled={signingIn}
+                onClick={() => {
+                  setSigningIn(true);
+                  signInWithGoogle()
+                    .catch(() => { /* surfaced via authError */ })
+                    .finally(() => setSigningIn(false));
+                }}
               >
-                {googleSigningIn ? (
-                  <Loader size={18} className="spin" />
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 48 48">
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                  </svg>
-                )}
-                {t('auth.signInWithGoogle')}
+                <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                  <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                  <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                  <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+                  <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
+                </svg>
+                {signingIn
+                  ? (isHe ? 'מתחבר...' : 'Signing in...')
+                  : (isHe ? 'התחבר עם Google' : 'Sign in with Google')}
               </button>
-              {googleError && (
-                <p className="setup-error"><AlertCircle size={16} /> {googleError}</p>
+              {authError && (
+                <p className="setup-error">
+                  <AlertCircle size={16} />{' '}
+                  {isHe ? `הכניסה נכשלה: ${authError}` : `Sign-in failed: ${authError}`}
+                </p>
               )}
               <div className="setup-or">{t('setup.or')}</div>
+            </>
+          ) : (
+            <>
+              <p className="setup-description" style={{ textAlign: 'center' }}>
+                {family
+                  ? isHe
+                    ? `מחובר/ת כ־${firebaseUser.email} — המשפחה נמצאה אך אין בה טיולים עדיין`
+                    : `Signed in as ${firebaseUser.email} — family found, but it has no trips yet`
+                  : isHe
+                    ? `מחובר/ת כ־${firebaseUser.email} — לא נמצאה משפחה קיימת`
+                    : `Signed in as ${firebaseUser.email} — no existing family found`}
+              </p>
+              {recoveryError && (
+                <p className="setup-error" style={{ justifyContent: 'center' }}>
+                  <AlertCircle size={16} />{' '}
+                  {isHe ? `שגיאת שחזור: ${recoveryError}` : `Recovery error: ${recoveryError}`}
+                </p>
+              )}
+              <p className="setup-build-stamp" style={{ marginTop: 0, direction: 'ltr' }}>
+                {[
+                  `local=${familyId ?? '-'}`,
+                  `family=${family ? 'loaded' : '-'}`,
+                  family ? `familyTrips=${family.tripCodes?.length ?? 0}` : null,
+                  family ? `active=${family.activeTripCode ?? '-'}` : null,
+                  recoveryDiag,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+              <button
+                className="setup-btn secondary"
+                onClick={() => signOutUser().catch(() => { /* ignore */ })}
+              >
+                {isHe ? 'התנתק ונסה חשבון אחר' : 'Sign out and try another account'}
+              </button>
             </>
           )}
 
@@ -259,11 +314,24 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
             <span>{t('setup.join')}</span>
           </button>
         </div>
+
+        <p className="setup-build-stamp">
+          {import.meta.env.VITE_FIREBASE_PROJECT_ID || 'no-project'} ·{' '}
+          {isHe ? 'גרסה' : 'Version'} {__APP_VERSION__} ·{' '}
+          {new Intl.DateTimeFormat(isHe ? 'he-IL' : 'en-GB', {
+            timeZone: 'Asia/Jerusalem',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(new Date(__BUILD_TIME__))}
+        </p>
       </div>
     );
   }
 
-  // Join screen
+  // Join screen (reachable only from the first-run choice screen)
   if (mode === 'join') {
     return (
       <div className="setup-page">
@@ -289,7 +357,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
     );
   }
 
-  // Create trip screen
+  // Step 1: trip details
   if (mode === 'create') {
     return (
       <div className="setup-page">
@@ -300,7 +368,7 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
             <input
               type="text"
               className="setup-input"
-              placeholder="e.g., greece2026"
+              placeholder="e.g., italy2027"
               value={newTripCode}
               onChange={(e) => setNewTripCode(e.target.value)}
             />
@@ -311,80 +379,88 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
             <input
               type="text"
               className="setup-input"
+              placeholder={isHe ? 'למשל: איטליה 2027' : 'e.g., Italy 2027'}
               value={tripName}
               onChange={(e) => setTripName(e.target.value)}
             />
           </label>
 
-          <h3>{isHe ? 'בני המשפחה' : 'Family Members'}</h3>
-          {members.map((m, i) => (
-            <div key={i} className="member-row">
-              <input
-                className="setup-input small"
-                placeholder="Emoji"
-                value={m.emoji}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], emoji: e.target.value };
-                  setMembers(updated);
-                }}
-                style={{ width: '60px' }}
-              />
-              <input
-                className="setup-input"
-                placeholder="Name (English)"
-                value={m.name}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], name: e.target.value };
-                  setMembers(updated);
-                }}
-              />
-              <input
-                className="setup-input"
-                placeholder="שם (עברית)"
-                dir="rtl"
-                value={m.nameHe}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], nameHe: e.target.value };
-                  setMembers(updated);
-                }}
-              />
-              <select
-                className="setup-input small"
-                value={m.deviceType}
-                onChange={(e) => {
-                  const updated = [...members];
-                  updated[i] = { ...updated[i], deviceType: e.target.value as 'phone' | 'tablet' };
-                  setMembers(updated);
-                }}
-              >
-                <option value="phone">📱</option>
-                <option value="tablet">📱 Tablet</option>
-              </select>
-            </div>
-          ))}
-          <button
-            className="setup-btn text"
-            onClick={() =>
-              setMembers([...members, { name: '', nameHe: '', emoji: '👤', deviceType: 'phone' }])
-            }
-          >
-            <Plus size={16} /> {isHe ? 'הוסף בן משפחה' : 'Add Member'}
-          </button>
+          <label className="setup-label">
+            {isHe ? 'יעד (אנגלית)' : 'Destination (English)'}
+            <input
+              type="text"
+              className="setup-input"
+              placeholder="e.g., Italy"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+            />
+          </label>
 
-          {parseError && <p className="setup-error"><AlertCircle size={16} /> {parseError}</p>}
+          <label className="setup-label">
+            {isHe ? 'יעד (עברית)' : 'Destination (Hebrew)'}
+            <input
+              type="text"
+              className="setup-input"
+              dir="rtl"
+              placeholder="למשל: איטליה"
+              value={destinationHe}
+              onChange={(e) => setDestinationHe(e.target.value)}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'אימוג׳י דגל' : 'Flag Emoji'}
+            <input
+              type="text"
+              className="setup-input"
+              value={flagEmoji}
+              onChange={(e) => setFlagEmoji(e.target.value)}
+              style={{ width: '80px' }}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'תאריך התחלה' : 'Start Date'}
+            <input
+              type="date"
+              className="setup-input"
+              required
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </label>
+
+          <label className="setup-label">
+            {isHe ? 'תאריך סיום' : 'End Date'}
+            <input
+              type="date"
+              className="setup-input"
+              required
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </label>
+
+          {!dateOrderValid && (
+            <p className="setup-error">
+              <AlertCircle size={16} />{' '}
+              {isHe
+                ? 'תאריך הסיום חייב להיות אחרי תאריך ההתחלה'
+                : 'End date must be on or after the start date'}
+            </p>
+          )}
 
           <button
             className="setup-btn primary"
-            onClick={handleCreateTrip}
-            disabled={creating || !newTripCode.trim()}
+            onClick={() => setMode('members')}
+            disabled={!detailsValid}
           >
-            {creating ? <Loader size={16} className="spin" /> : null}
-            {t('setup.createTrip')}
+            {isHe ? 'הבא' : 'Next'}
           </button>
-          <button className="setup-btn secondary" onClick={() => setMode('choice')}>
+          <button
+            className="setup-btn secondary"
+            onClick={() => (inApp ? navigate('/') : setMode('choice'))}
+          >
             {t('common.back')}
           </button>
         </div>
@@ -392,91 +468,156 @@ Only include fields you can extract. Return ONLY valid JSON, no markdown.`,
     );
   }
 
-  // Upload screen (after trip created)
+  // Step 2: family members — the family roster is the baseline. Uncheck a
+  // member to leave them out of THIS trip; edits update the family itself.
+  if (mode === 'members') {
+    const updateRow = (i: number, patch: Partial<FamilyMember>) => {
+      setRoster((rows) =>
+        rows.map((row, idx) => (idx === i ? { ...row, member: { ...row.member, ...patch } } : row))
+      );
+    };
+
+    return (
+      <div className="setup-page">
+        <h2>{isHe ? 'בני המשפחה' : 'Family Members'}</h2>
+        <p className="setup-description">
+          {isHe
+            ? 'זו רשימת המשפחה הקבועה. עדכון פרטים ישמר למשפחה; הסרת סימון תשאיר את בן המשפחה מחוץ לטיול הזה בלבד.'
+            : 'This is your family roster. Detail edits are saved to the family; unchecking leaves a member out of this trip only.'}
+        </p>
+        <div className="setup-form">
+          {roster.map((row, i) => (
+            <div
+              key={row.member.id}
+              className="member-row"
+              style={{ opacity: row.included ? 1 : 0.45, flexWrap: 'wrap' }}
+            >
+              <input
+                type="checkbox"
+                checked={row.included}
+                onChange={(e) =>
+                  setRoster((rows) =>
+                    rows.map((r, idx) => (idx === i ? { ...r, included: e.target.checked } : r))
+                  )
+                }
+                title={isHe ? 'משתתפ/ת בטיול הזה' : 'Joining this trip'}
+                style={{ width: '18px', height: '18px', flexShrink: 0 }}
+              />
+              <input
+                className="setup-input small"
+                placeholder="Emoji"
+                value={row.member.emoji}
+                onChange={(e) => updateRow(i, { emoji: e.target.value })}
+                style={{ width: '54px' }}
+              />
+              <input
+                className="setup-input"
+                placeholder="Name (English)"
+                value={row.member.name}
+                onChange={(e) => updateRow(i, { name: e.target.value })}
+              />
+              <input
+                className="setup-input"
+                placeholder="שם (עברית)"
+                dir="rtl"
+                value={row.member.nameHe}
+                onChange={(e) => updateRow(i, { nameHe: e.target.value })}
+              />
+              <input
+                className="setup-input"
+                type="email"
+                placeholder="email@..."
+                value={row.member.email ?? ''}
+                onChange={(e) => updateRow(i, { email: e.target.value })}
+              />
+              <select
+                className="setup-input small"
+                value={row.member.deviceType}
+                onChange={(e) => updateRow(i, { deviceType: e.target.value as 'phone' | 'tablet' })}
+              >
+                <option value="phone">📱</option>
+                <option value="tablet">📱 Tablet</option>
+              </select>
+              {row.isNew && (
+                <button
+                  className="setup-btn text"
+                  onClick={() => setRoster((rows) => rows.filter((_, idx) => idx !== i))}
+                  aria-label={isHe ? 'הסר בן משפחה' : 'Remove member'}
+                  style={{ padding: '4px' }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            className="setup-btn text"
+            onClick={() =>
+              setRoster((rows) => [
+                ...rows,
+                {
+                  member: {
+                    id: `member-${Date.now()}`,
+                    name: '',
+                    nameHe: '',
+                    emoji: '👤',
+                    deviceType: 'phone',
+                  },
+                  included: true,
+                  isNew: true,
+                },
+              ])
+            }
+          >
+            <Plus size={16} /> {isHe ? 'הוסף בן משפחה' : 'Add Member'}
+          </button>
+
+          <label
+            className="setup-label"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}
+          >
+            <input
+              type="checkbox"
+              checked={makeActive}
+              onChange={(e) => setMakeActive(e.target.checked)}
+            />
+            {isHe ? 'הפוך לטיול הפעיל של המשפחה' : "Set as the family's active trip"}
+          </label>
+
+          {createError && (
+            <p className="setup-error">
+              <AlertCircle size={16} /> {createError}
+            </p>
+          )}
+
+          <button
+            className="setup-btn primary"
+            onClick={handleCreateTrip}
+            disabled={creating || !detailsValid}
+          >
+            {creating ? <Loader size={16} className="spin" /> : null}
+            {t('setup.createTrip')}
+          </button>
+          <button className="setup-btn secondary" onClick={() => setMode('create')}>
+            {t('common.back')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 3: import bookings into the freshly created trip
   if (mode === 'upload') {
     return (
       <div className="setup-page">
         <h2>{t('setup.uploadTitle')}</h2>
         <p className="setup-description">{t('setup.uploadDescription')}</p>
-
-        <div className="setup-form">
-          <label className="setup-label">
-            Claude API Key
-            <input
-              type="password"
-              className="setup-input"
-              placeholder="sk-ant-..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </label>
-
-          <div
-            className="upload-zone"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload size={40} />
-            <p>{t('setup.selectFiles')}</p>
-            {files.length > 0 && (
-              <div className="file-list">
-                {files.map((f, i) => (
-                  <div key={i} className="file-item">
-                    <FileText size={16} />
-                    <span>{f.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf"
-            multiple
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-          />
-
-          {parsing && (
-            <div className="parsing-status">
-              <Loader size={20} className="spin" />
-              <span>{t('setup.parsing')}</span>
-            </div>
-          )}
-
-          {parsedData && (
-            <div className="parsed-preview">
-              <div className="parsed-header">
-                <Check size={20} /> {t('setup.parsed')}
-              </div>
-              <textarea
-                className="parsed-json"
-                value={parsedData}
-                onChange={(e) => setParsedData(e.target.value)}
-                rows={10}
-              />
-              <button className="setup-btn primary" onClick={handleSaveParsed}>
-                {t('setup.save')}
-              </button>
-            </div>
-          )}
-
-          {parseError && <p className="setup-error"><AlertCircle size={16} /> {parseError}</p>}
-
-          {!parsedData && (
-            <button
-              className="setup-btn primary"
-              onClick={handleParse}
-              disabled={parsing || !files.length}
-            >
-              {t('setup.review')}
-            </button>
-          )}
-
-          <button className="setup-btn secondary" onClick={() => navigate('/')}>
-            {isHe ? 'דלג והמשך' : 'Skip & Continue'}
-          </button>
-        </div>
+        <BookingImport
+          tripCode={createdCode}
+          startDate={startDate}
+          endDate={endDate}
+          onDone={() => navigate('/')}
+        />
       </div>
     );
   }

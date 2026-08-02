@@ -1,20 +1,25 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
+import { useFamilyContext } from '../context/FamilyContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
-import type { FamilyMember } from '../types/trip';
+import { updateMemberTemplates } from '../firebase/familyService';
+import { generateText, hasAiKey, stripJsonFences } from '../ai';
+import { GREECE_QUIZ_SEED } from '../data/greeceQuizSeed';
+import type { FamilyMember, QuizQuestion } from '../types/trip';
 import type { AIConfig } from '../types/ai';
 
 export default function AdminPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { config, tripCode, isAdmin } = useTripContext();
+  const { config, tripCode, isAdmin, quizQuestions, totalDays } = useTripContext();
   const { firebaseUser } = useAuthContext();
+  const { family, familyId } = useFamilyContext();
   const isHe = i18n.language === 'he';
 
   const [aiConfig, setAiConfigState] = useState<AIConfig>(getAIConfig);
@@ -29,11 +34,15 @@ export default function AdminPage() {
   const [members, setMembers] = useState<FamilyMember[]>(
     config?.familyMembers ?? []
   );
+  const [syncFamily, setSyncFamily] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [claimMsg, setClaimMsg] = useState('');
+  const [quizBusy, setQuizBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [quizError, setQuizError] = useState('');
 
   const inviteUrl = tripCode
     ? `${window.location.origin}/join/${tripCode}`
@@ -125,12 +134,78 @@ export default function AdminPage() {
     setError('');
     try {
       await saveTripConfig({ ...config, familyMembers: members });
+
+      // Optionally propagate detail edits to the family roster: matching ids
+      // are updated, new members appended. Roster members who simply aren't
+      // on this trip are left untouched.
+      if (syncFamily && familyId) {
+        const templates = family?.memberTemplates ?? [];
+        const byId = new Map(members.map((m) => [m.id, m]));
+        const merged = [
+          ...templates.map((tmpl) => byId.get(tmpl.id) ?? tmpl),
+          ...members.filter((m) => !templates.some((tmpl) => tmpl.id === m.id)),
+        ];
+        await updateMemberTemplates(familyId, merged);
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSeedQuiz() {
+    if (!tripCode || quizBusy) return;
+    setQuizBusy(true);
+    setQuizError('');
+    try {
+      for (const q of GREECE_QUIZ_SEED) {
+        await saveQuizQuestion(tripCode, q);
+      }
+    } catch (e) {
+      setQuizError((e as Error).message);
+    } finally {
+      setQuizBusy(false);
+    }
+  }
+
+  async function handleDeleteQuestion(id: string) {
+    if (!tripCode) return;
+    setQuizError('');
+    try {
+      await deleteQuizQuestion(tripCode, id);
+    } catch (e) {
+      setQuizError((e as Error).message);
+    }
+  }
+
+  async function handleGenerateQuiz() {
+    if (!tripCode || generating || !hasAiKey()) return;
+    setGenerating(true);
+    setQuizError('');
+    try {
+      const destination = config?.destination ?? config?.tripName ?? '';
+      const prompt = `Create EXACTLY ${totalDays} kid-friendly multiple-choice quiz questions about ${destination} for a family trip.
+One question per day: dayIndex 0 to ${totalDays - 1}, ids "q1" to "q${totalDays}".
+Each question must be bilingual (English + Hebrew) with 4 options and a fun fact.
+Return a JSON array where each item matches exactly this shape:
+{"id":"q1","dayIndex":0,"question":"","questionHe":"","options":["","","",""],"optionsHe":["","","",""],"correctIndex":0,"funFact":"","funFactHe":""}
+Return ONLY valid JSON, no markdown.`;
+      const raw = await generateText(prompt, 8192);
+      const parsed = JSON.parse(stripJsonFences(raw)) as QuizQuestion[];
+      if (!Array.isArray(parsed)) {
+        throw new Error(isHe ? 'תשובת ה-AI אינה מערך תקין' : 'AI response is not a valid array');
+      }
+      for (const q of parsed) {
+        await saveQuizQuestion(tripCode, q);
+      }
+    } catch (e) {
+      setQuizError((e as Error).message);
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -275,6 +350,23 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* Booking import — screenshots/PDFs of flights, hotels, etc. */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <FileUp size={16} />
+          {isHe ? 'ייבוא הזמנות' : 'Import Bookings'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          {isHe
+            ? 'העלאת צילומי מסך או קבצי PDF של טיסות, מלונות והזמנות — והוספתם לטיול אוטומטית'
+            : 'Upload screenshots or PDFs of flights, hotels and bookings — added to the trip automatically'}
+        </p>
+        <button className="admin-btn primary" onClick={() => navigate('/import')}>
+          <FileUp size={14} />
+          {isHe ? 'לייבוא הזמנות' : 'Open Import'}
+        </button>
+      </div>
+
       {/* Invite Link */}
       <div className="admin-section">
         <div className="admin-section-title">
@@ -402,6 +494,19 @@ export default function AdminPage() {
           </div>
         ))}
 
+        {familyId && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-muted)', marginTop: '10px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={syncFamily}
+              onChange={(e) => setSyncFamily(e.target.checked)}
+            />
+            {isHe
+              ? 'עדכן גם את רשימת המשפחה הקבועה (לטיולים הבאים)'
+              : 'Also update the family roster (used for future trips)'}
+          </label>
+        )}
+
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
           <button className="admin-btn secondary" onClick={addMember}>
             <Plus size={14} />
@@ -418,6 +523,59 @@ export default function AdminPage() {
         {error && (
           <p style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--red-500)', fontSize: '13px', marginTop: '8px' }}>
             <AlertCircle size={14} /> {error}
+          </p>
+        )}
+      </div>
+
+      {/* Quiz Questions */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <HelpCircle size={16} />
+          {isHe ? 'שאלות חידון' : 'Quiz Questions'} ({quizQuestions.length})
+        </div>
+
+        {[...quizQuestions]
+          .sort((a, b) => a.dayIndex - b.dayIndex)
+          .map((q) => (
+            <div key={q.id} className="admin-member-row">
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', minWidth: '48px' }}>
+                {t('common.day')} {q.dayIndex + 1}
+              </span>
+              <span style={{ flex: 1, fontSize: '13px' }}>
+                {isHe ? q.questionHe : q.question}
+              </span>
+              <button
+                className="admin-icon-btn delete"
+                onClick={() => handleDeleteQuestion(q.id)}
+                title={t('common.delete')}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+          {quizQuestions.length === 0 && (
+            <button className="admin-btn secondary" onClick={handleSeedQuiz} disabled={quizBusy}>
+              <Plus size={14} />
+              {isHe ? 'טען שאלות יוון' : 'Seed Greece questions'}
+            </button>
+          )}
+          <button
+            className="admin-btn primary"
+            onClick={handleGenerateQuiz}
+            disabled={!hasAiKey() || generating}
+          >
+            {generating ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+            {generating
+              ? (isHe ? 'מייצר...' : 'Generating...')
+              : (isHe ? 'ייצר עם AI' : 'Generate with AI')}
+          </button>
+        </div>
+
+        {quizError && (
+          <p style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--red-500)', fontSize: '13px', marginTop: '8px' }}>
+            <AlertCircle size={14} /> {quizError}
           </p>
         )}
       </div>
