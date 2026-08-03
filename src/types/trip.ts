@@ -234,7 +234,32 @@ export interface QuizAnswer {
   correct: boolean;
 }
 
+// A single scheduled element of a day plan — activity, meal, or drive —
+// with practical details and an approval flag (approved items appear on the map).
+export interface PlanItem {
+  id: string;
+  kind: 'activity' | 'meal' | 'drive';
+  name: string;
+  nameHe?: string;
+  startTime?: string; // "09:00"
+  durationMinutes?: number;
+  location?: string; // place or city (geocodable)
+  lat?: number;
+  lng?: number;
+  website?: string;
+  price?: string; // e.g. "€12 adult / €6 child" — AI values are approximate
+  openingHours?: string;
+  notes?: string;
+  notesHe?: string;
+  // drive-only:
+  from?: string;
+  to?: string;
+  distanceKm?: number;
+  approved?: boolean;
+}
+
 export interface DayPlan {
+  items?: PlanItem[]; // structured plan (preferred)
   morning?: string[];
   morningHe?: string[];
   afternoon?: string[];

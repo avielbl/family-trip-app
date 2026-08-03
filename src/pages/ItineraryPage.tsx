@@ -19,7 +19,8 @@ import { format, parseISO, addDays } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { saveTripDay } from '../firebase/tripService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
-import type { TripDay, Hotel, Flight, DrivingSegment, Highlight, Restaurant } from '../types/trip';
+import type { TripDay, Hotel, Flight, DrivingSegment, Highlight, Restaurant, PlanItem } from '../types/trip';
+import { PlanItemsList, PlanQuestionnaire, type PlanPreferences } from '../components/PlanItems';
 
 // ─── Curated Greece itinerary suggestions ────────────────────────────────────
 // Used as fallback/supplement when Firebase data has no entries for a day.
@@ -286,6 +287,7 @@ export default function ItineraryPage() {
   const isRTL = i18n.language === 'he';
   const { days, hotels, flights, driving, highlights, restaurants, config, tripCode, isAdmin } = useTripContext();
   const [planBusy, setPlanBusy] = useState(false);
+  const [askPrefs, setAskPrefs] = useState(false);
   const [planError, setPlanError] = useState('');
 
   // Curated suggestions are Greece-specific — only surface them on a Greece trip.
@@ -336,16 +338,15 @@ export default function ItineraryPage() {
   }, [days, hotels, flights, driving, highlights, restaurants, totalDays, tripStart, isGreeceTrip]);
 
 
-  // Admin: AI-generate a per-day plan for ANY destination and store it on the
-  // trip's day documents (editable afterwards; shown instead of curated content).
-  async function handleGeneratePlan() {
+  // Admin: AI-generate a structured per-day plan for ANY destination — meals
+  // with times, drives with distances, visit durations, practical details —
+  // shaped by the family's questionnaire answers. Stored on the day docs.
+  async function handleGeneratePlan(prefs: PlanPreferences) {
     if (!config || !tripCode || planBusy) return;
     if (!hasAiKey()) {
       setPlanError(isRTL ? 'יש להגדיר מפתח AI בעמוד הניהול' : 'Configure an AI key on the Admin page first');
       return;
     }
-    const overwrite = days.some((d) => d.plan);
-    if (overwrite && !window.confirm(isRTL ? 'קיימת תוכנית — להחליף אותה?' : 'A plan exists — replace it?')) return;
     setPlanBusy(true);
     setPlanError('');
     try {
@@ -353,24 +354,66 @@ export default function ItineraryPage() {
         .map((h) => `- ${h.name} in ${h.city}: ${(h.checkIn ?? '').slice(0, 10)} to ${(h.checkOut ?? '').slice(0, 10)}`)
         .join('\n');
       const flightLines = flights
-        .map((f) => `- ${f.departureAirport} -> ${f.arrivalAirport} on ${(f.departureTime ?? '').slice(0, 10)}`)
+        .map((f) => `- ${f.departureAirport} -> ${f.arrivalAirport}, lands ${(f.arrivalTime ?? '').slice(0, 16)}`)
         .join('\n');
-      const prompt = `Plan a family day-by-day itinerary for a trip to ${config.destination || config.tripName}.
-Trip dates: ${config.startDate} to ${config.endDate} (${totalDays} days, dayIndex 0 to ${totalDays - 1}).
-Base each day around where the family sleeps that night:
-HOTELS:\n${hotelLines || '(none listed)'}
-FLIGHTS:\n${flightLines || '(none listed)'}
-Rules: realistic driving distances; kid-friendly activities; arrival/departure days lighter.
-Return ONLY a valid JSON array (no markdown), one item per day:
-{"dayIndex":0,"title":"","titleHe":"","location":"","locationHe":"","morning":["",""],"morningHe":["",""],"afternoon":[""],"afternoonHe":[""],"evening":[""],"eveningHe":[""],"restaurants":[""],"restaurantsHe":[""],"tips":"","tipsHe":""}`;
-      const raw = await generateText(prompt, 16384);
+      const kidsNote = prefs.kidsAges ? `Kids ages: ${prefs.kidsAges}.` : '';
+      const prompt = `You are an expert family-travel planner. Build a realistic day-by-day plan for a family trip to ${config.destination || config.tripName}.
+
+TRIP FACTS (authoritative — the plan MUST fit these):
+- Dates: ${config.startDate} to ${config.endDate} (${totalDays} days, dayIndex 0..${totalDays - 1}).
+- Family: ${config.familyMembers?.length ?? 'several'} people. ${kidsNote}
+- HOTELS (each night's base — activities must be reachable from that night's hotel):
+${hotelLines || '(none listed)'}
+- FLIGHTS:
+${flightLines || '(none listed)'}
+
+FAMILY PREFERENCES:
+- Interests: ${prefs.interests.join(', ') || 'general'}
+- Pace: ${prefs.pace} | Budget: ${prefs.budget} | Meals: ${prefs.meals}
+${prefs.extra ? `- Notes: ${prefs.extra}` : ''}
+
+PLANNING RULES:
+1. Anchor every day to that night's hotel. On hotel-change days include the transfer drive.
+2. Every drive is its own item (kind "drive") with realistic distanceKm and durationMinutes between the actual places. Keep total daily driving reasonable for kids.
+3. Include meals (kind "meal") at realistic times (~08:30 breakfast, ~13:00 lunch, ~18:30 dinner) with a concrete place or area matching the meals preference.
+4. Give each activity a realistic durationMinutes and startTime; don't overpack — respect the pace.
+5. Arrival/departure days must be light and fit the flight times.
+6. For activities: include website, price, openingHours ONLY when you are reasonably confident; otherwise null. Mark clearly estimated prices with "~".
+7. Bilingual: name/nameHe and notes/notesHe (Hebrew).
+
+OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
+{"dayIndex":0,"title":"","titleHe":"","location":"","locationHe":"","items":[
+ {"kind":"activity|meal|drive","name":"","nameHe":"","startTime":"09:00","durationMinutes":90,"location":"","website":null,"price":null,"openingHours":null,"notes":"","notesHe":"","from":null,"to":null,"distanceKm":null}
+]}`;
+      const raw = await generateText(prompt, 32768);
       const parsed = JSON.parse(stripJsonFences(raw)) as Array<Record<string, unknown>>;
+      const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
       for (const item of parsed) {
         const di = Number(item.dayIndex);
         if (!Number.isInteger(di) || di < 0 || di >= totalDays) continue;
         const existing = days.find((d) => d.dayIndex === di);
-        const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
-        const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined);
+        const rawItems = Array.isArray(item.items) ? (item.items as Array<Record<string, unknown>>) : [];
+        const items: PlanItem[] = rawItems
+          .filter((it) => typeof it.name === 'string' && it.name)
+          .map((it, idx) => ({
+            id: `plan-${di}-${idx}-${Date.now().toString(36)}`,
+            kind: it.kind === 'meal' || it.kind === 'drive' ? (it.kind as PlanItem['kind']) : 'activity',
+            name: it.name as string,
+            nameHe: str(it.nameHe),
+            startTime: str(it.startTime),
+            durationMinutes: num(it.durationMinutes),
+            location: str(it.location),
+            website: str(it.website),
+            price: str(it.price),
+            openingHours: str(it.openingHours),
+            notes: str(it.notes),
+            notesHe: str(it.notesHe),
+            from: str(it.from),
+            to: str(it.to),
+            distanceKm: num(it.distanceKm),
+            approved: false,
+          }));
         await saveTripDay(tripCode, {
           dayIndex: di,
           date: existing?.date ?? format(addDays(tripStart, di), 'yyyy-MM-dd'),
@@ -383,18 +426,7 @@ Return ONLY a valid JSON array (no markdown), one item per day:
           driving: existing?.driving ?? [],
           highlights: existing?.highlights ?? [],
           restaurants: existing?.restaurants ?? [],
-          plan: {
-            morning: arr(item.morning),
-            morningHe: arr(item.morningHe),
-            afternoon: arr(item.afternoon),
-            afternoonHe: arr(item.afternoonHe),
-            evening: arr(item.evening),
-            eveningHe: arr(item.eveningHe),
-            restaurants: arr(item.restaurants),
-            restaurantsHe: arr(item.restaurantsHe),
-            tips: str(item.tips),
-            tipsHe: str(item.tipsHe),
-          },
+          plan: { ...(existing?.plan ?? {}), items },
         });
       }
     } catch (e) {
@@ -422,7 +454,15 @@ Return ONLY a valid JSON array (no markdown), one item per day:
 
       {isAdmin && (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-          <button className="admin-btn primary" onClick={handleGeneratePlan} disabled={planBusy}>
+          <button
+            className="admin-btn primary"
+            onClick={() => {
+              const overwrite = days.some((d) => d.plan?.items?.length);
+              if (overwrite && !window.confirm(isRTL ? 'קיימת תוכנית — להחליף אותה?' : 'A plan exists — replace it?')) return;
+              setAskPrefs(true);
+            }}
+            disabled={planBusy}
+          >
             <Wand2 size={14} />
             {planBusy
               ? (isRTL ? 'יוצר תוכנית...' : 'Generating plan...')
@@ -430,6 +470,17 @@ Return ONLY a valid JSON array (no markdown), one item per day:
           </button>
           {planError && <span className="setup-error" style={{ fontSize: 12 }}>{planError}</span>}
         </div>
+      )}
+
+      {askPrefs && (
+        <PlanQuestionnaire
+          isRTL={isRTL}
+          onCancel={() => setAskPrefs(false)}
+          onSubmit={(prefs) => {
+            setAskPrefs(false);
+            void handleGeneratePlan(prefs);
+          }}
+        />
       )}
 
       <div className="itinerary-table-container">
@@ -689,7 +740,21 @@ function ItineraryCard({
         </div>
       )}
 
-      {/* Suggested Activities */}
+      {/* Structured plan items (AI-generated / manual) */}
+      {tripDay?.plan?.items?.length ? (
+        <div className="itinerary-section">
+          <div className="itinerary-section-label">
+            <Sun size={13} color="#f59e0b" />
+            {isRTL ? 'תוכנית היום' : 'Day Plan'}
+          </div>
+          <PlanItemsList
+            tripDay={tripDay}
+            isRTL={isRTL}
+            isAdmin={!!isAdmin}
+            onSave={onSaveDay ?? (async () => {})}
+          />
+        </div>
+      ) : (
       <div className="itinerary-section">
         <div className="itinerary-section-label">
           <Sun size={13} color="#f59e0b" />
@@ -725,6 +790,7 @@ function ItineraryCard({
           </div>
         </div>
       </div>
+      )}
 
       {/* Driving */}
       {dayDriving.length > 0 && (

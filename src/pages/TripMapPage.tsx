@@ -1,8 +1,9 @@
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { MapPin, Building2, Star, Layers, UtensilsCrossed } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
-import type { Hotel, Highlight, Restaurant } from '../types/trip';
+import type { Hotel, Highlight, Restaurant, PlanItem } from '../types/trip';
 import { cachedCoords, geocodeMany } from '../utils/geocode';
 
 // ─── Place coordinate resolution ─────────────────────────────────────────────
@@ -79,6 +80,7 @@ const TILE_LAYERS = {
 // ─── Map Legend data ──────────────────────────────────────────────────────────
 
 const LEGEND_ITEMS = [
+  { color: '#7c3aed', label: 'Approved plan item', labelHe: 'פריט תוכנית מאושר' },
   { color: '#1d4ed8', label: 'Hotel', labelHe: 'מלון' },
   { color: '#16a34a', label: 'Restaurant', labelHe: 'מסעדה' },
   { color: '#0ea5e9', label: 'Beach', labelHe: 'חוף' },
@@ -93,7 +95,16 @@ const LEGEND_ITEMS = [
 export default function TripMapPage() {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
-  const { hotels, highlights, restaurants, flights, config } = useTripContext();
+  const { hotels, highlights, restaurants, flights, config, days } = useTripContext();
+  const [searchParams] = useSearchParams();
+  // Layer filters — highlight what you need, hide the rest.
+  const [show, setShow] = useState({
+    hotels: true,
+    highlights: true,
+    restaurants: true,
+    plan: true,
+    route: true,
+  });
   const [geo, setGeo] = useState<Geo>({});
 
   // Resolve every place name the map needs (async, cached). Includes the trip
@@ -105,6 +116,12 @@ export default function TripMapPage() {
       ...highlights.flatMap((hl) => (hl.lat && hl.lng ? [] : [hl.address, hl.name])),
       ...restaurants.flatMap((r) => (r.lat && r.lng ? [] : [r.city, r.address])),
       ...flights.flatMap((f) => [f.arrivalAirport, f.departureAirport]),
+      ...days.flatMap((d) =>
+        (d.plan?.items ?? [])
+          .filter((i) => i.approved && !(i.lat && i.lng) && i.location)
+          .map((i) => i.location)
+      ),
+      searchParams.get('focusName'),
     ];
     let cancelled = false;
     geocodeMany(names.filter((n): n is string => !!n)).then((resolved) => {
@@ -113,7 +130,7 @@ export default function TripMapPage() {
     return () => {
       cancelled = true;
     };
-  }, [hotels, highlights, restaurants, flights, config]);
+  }, [hotels, highlights, restaurants, flights, config, days, searchParams]);
 
   // Airport marker/route endpoints from the trip's flights (if resolvable).
   const sortedFlights = useMemo(
@@ -168,6 +185,35 @@ export default function TripMapPage() {
         .filter(Boolean) as { restaurant: Restaurant; lat: number; lng: number }[],
     [restaurants, geo]
   );
+
+  // Approved plan items (activities/meals) — shown on the map once approved.
+  const planPoints = useMemo(
+    () =>
+      days
+        .flatMap((d) => (d.plan?.items ?? []).map((item) => ({ item, dayIndex: d.dayIndex })))
+        .filter(({ item }) => item.approved && item.kind !== 'drive')
+        .map(({ item, dayIndex }) => {
+          const c =
+            item.lat && item.lng
+              ? { lat: item.lat, lng: item.lng }
+              : resolvePlace(geo, item.location);
+          return c ? { item, dayIndex, lat: c.lat, lng: c.lng } : null;
+        })
+        .filter(Boolean) as { item: PlanItem; dayIndex: number; lat: number; lng: number }[],
+    [days, geo]
+  );
+
+  // Focus request from the itinerary ("show on map").
+  const focusParam = searchParams.get('focus');
+  const focusNameParam = searchParams.get('focusName');
+  const focusLabel = searchParams.get('label') ?? '';
+  let focusCoords: { lat: number; lng: number } | null = null;
+  if (focusParam) {
+    const [la, ln] = focusParam.split(',').map(Number);
+    if (Number.isFinite(la) && Number.isFinite(ln)) focusCoords = { lat: la, lng: ln };
+  } else if (focusNameParam) {
+    focusCoords = resolvePlace(geo, focusNameParam);
+  }
 
   // Default center: the trip destination (geocoded); world view as last resort.
   const destCoords = resolvePlace(geo, config?.destination);
@@ -254,7 +300,7 @@ export default function TripMapPage() {
           popupAnchor: [0, -20],
         });
 
-      hotelPoints.forEach((pt, i) => {
+      if (show.hotels) hotelPoints.forEach((pt, i) => {
         allLatLngs.push([pt.lat, pt.lng]);
         const checkIn = pt.hotel.checkIn
           ? new Date(pt.hotel.checkIn).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
@@ -276,7 +322,7 @@ export default function TripMapPage() {
       });
 
       // ── Route polyline: OSRM real roads (SKG → hotels → SKG) ────────
-      if (hotelPoints.length > 0) {
+      if (show.route && hotelPoints.length > 0) {
         const hotelWaypoints = hotelPoints.map((pt) => ({ lat: pt.lat, lng: pt.lng }));
         const routeWaypoints = airport
           ? [airport, ...hotelWaypoints, airport]
@@ -303,7 +349,7 @@ export default function TripMapPage() {
       }
 
       // ── Highlight markers (colored circles) ───────────────────────
-      highlightPoints.forEach((pt) => {
+      if (show.highlights) highlightPoints.forEach((pt) => {
         const color = CATEGORY_COLORS[pt.highlight.category] || '#6b7280';
         const hl = pt.highlight;
         const icon = L.divIcon({
@@ -335,7 +381,7 @@ export default function TripMapPage() {
       });
 
       // ── Restaurant markers (green fork) ───────────────────────────
-      restaurantPoints.forEach((pt) => {
+      if (show.restaurants) restaurantPoints.forEach((pt) => {
         const r = pt.restaurant;
         const icon = L.divIcon({
           className: '',
@@ -366,6 +412,35 @@ export default function TripMapPage() {
           );
       });
 
+      // ── Approved plan items (violet stars) ───────────────────────
+      if (show.plan) planPoints.forEach((pt) => {
+        allLatLngs.push([pt.lat, pt.lng]);
+        const it = pt.item;
+        const label = isRTL ? it.nameHe || it.name : it.name;
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            background:#7c3aed;color:#fff;border:2px solid #fff;border-radius:50%;
+            width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+            font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,0.3);
+          ">${it.kind === 'meal' ? '🍽' : '★'}</div>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+          popupAnchor: [0, -16],
+        });
+        L.marker([pt.lat, pt.lng], { icon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="font-family:Inter,sans-serif;min-width:150px;">
+              <strong style="color:#7c3aed">${it.kind === 'meal' ? '🍽' : '★'} ${label}</strong><br/>
+              <span style="font-size:12px;color:#6b7280">Day ${pt.dayIndex + 1}${it.startTime ? ` · ${it.startTime}` : ''}</span>
+              ${it.openingHours ? `<br/><span style="font-size:11px">🕒 ${it.openingHours}</span>` : ''}
+              ${it.price ? `<br/><span style="font-size:11px">🎫 ${it.price}</span>` : ''}
+              ${it.website ? `<br/><a href="${it.website}" target="_blank" style="font-size:11px">website</a>` : ''}
+            </div>`
+          );
+      });
+
       // ── Fit bounds to all markers ─────────────────────────────────
       if (allLatLngs.length === 0) {
         // No data yet — show default Greece overview
@@ -377,6 +452,17 @@ export default function TripMapPage() {
         // Multiple markers — fit all, cap zoom so we don't end up street-level
         map.fitBounds(allLatLngs, { padding: [40, 40], maxZoom: 13 });
       }
+
+      // ── Focus request from the itinerary ("show on map") ─────────
+      if (focusCoords) {
+        map.setView([focusCoords.lat, focusCoords.lng], 14);
+        L.popup()
+          .setLatLng([focusCoords.lat, focusCoords.lng])
+          .setContent(
+            `<div style="font-family:Inter,sans-serif;font-weight:600">📍 ${focusLabel || (isRTL ? 'המיקום המבוקש' : 'Requested location')}</div>`
+          )
+          .openOn(map);
+      }
     });
 
     return () => {
@@ -384,7 +470,7 @@ export default function TripMapPage() {
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- defaultCenter/Zoom are derived from destCoords
-  }, [hotelPoints, highlightPoints, restaurantPoints, airport, arrivalAirportName, destCoords?.lat, destCoords?.lng]);
+  }, [hotelPoints, highlightPoints, restaurantPoints, planPoints, show, airport, arrivalAirportName, destCoords?.lat, destCoords?.lng, focusCoords?.lat, focusCoords?.lng, focusLabel, isRTL]);
 
   // Handle tile layer toggle without rebuilding the map
   useEffect(() => {
@@ -409,6 +495,27 @@ export default function TripMapPage() {
           ? 'מפה מלאה של הטיול עם מלונות, אטרקציות ומסלול הנסיעה'
           : 'Full trip map with hotels, highlights, restaurants, and driving route'}
       </p>
+
+      {/* ─── Layer filters ──────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        {(
+          [
+            ['hotels', isRTL ? '🏨 מלונות' : '🏨 Hotels'],
+            ['highlights', isRTL ? '📍 אטרקציות' : '📍 Attractions'],
+            ['restaurants', isRTL ? '🍽️ מסעדות' : '🍽️ Restaurants'],
+            ['plan', isRTL ? '★ תוכנית מאושרת' : '★ Approved plan'],
+            ['route', isRTL ? '🚗 מסלול' : '🚗 Route'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            className={`filter-tab ${show[key] ? 'active' : ''}`}
+            onClick={() => setShow((prev) => ({ ...prev, [key]: !prev[key] }))}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* ─── Map Container ──────────────────────────────────────── */}
       <div style={{ position: 'relative' }}>
