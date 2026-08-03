@@ -224,6 +224,18 @@ const SettingsPage: React.FC = () => {
         </label>
         <div className="trip-info">
           <p>TripIt &mdash; Family adventures, built with love</p>
+          <p style={{ direction: 'ltr' }}>
+            v{__APP_VERSION__} ·{' '}
+            {new Intl.DateTimeFormat('en-GB', {
+              timeZone: 'Asia/Jerusalem',
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(__BUILD_TIME__))}{' '}
+            · {import.meta.env.VITE_FIREBASE_PROJECT_ID || 'no-project'}
+          </p>
           <p>
             {config?.startDate} &ndash; {config?.endDate}
           </p>

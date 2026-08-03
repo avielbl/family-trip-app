@@ -200,6 +200,26 @@ export default function Layout() {
                 <span>{item.labelKey ? t(item.labelKey) : item.label}</span>
               </button>
             ))}
+            <div
+              style={{
+                marginTop: 'auto',
+                padding: '10px 16px',
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                opacity: 0.75,
+                direction: 'ltr',
+                textAlign: 'center',
+              }}
+            >
+              TripIt v{__APP_VERSION__} ·{' '}
+              {new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Jerusalem',
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              }).format(new Date(__BUILD_TIME__))}
+            </div>
           </nav>
         </div>
       )}
