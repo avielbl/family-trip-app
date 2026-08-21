@@ -116,11 +116,12 @@ export default function TripMapPage() {
       ...highlights.flatMap((hl) => (hl.lat && hl.lng ? [] : [hl.address, hl.name])),
       ...restaurants.flatMap((r) => (r.lat && r.lng ? [] : [r.city, r.address])),
       ...flights.flatMap((f) => [f.arrivalAirport, f.departureAirport]),
-      ...days.flatMap((d) =>
-        (d.plan?.items ?? [])
-          .filter((i) => i.approved && !(i.lat && i.lng) && i.location)
-          .map((i) => i.location)
-      ),
+      ...days.flatMap((d) => [
+        d.location,
+        ...(d.plan?.items ?? [])
+          .filter((i) => i.approved && !(i.lat && i.lng))
+          .flatMap((i) => [i.location, i.name]),
+      ]),
       searchParams.get('focusName'),
     ];
     let cancelled = false;
@@ -193,10 +194,13 @@ export default function TripMapPage() {
         .flatMap((d) => (d.plan?.items ?? []).map((item) => ({ item, dayIndex: d.dayIndex })))
         .filter(({ item }) => item.approved && item.kind !== 'drive')
         .map(({ item, dayIndex }) => {
+          const dayLoc = days.find((d) => d.dayIndex === dayIndex)?.location;
           const c =
             item.lat && item.lng
               ? { lat: item.lat, lng: item.lng }
-              : resolvePlace(geo, item.location);
+              : resolvePlace(geo, item.location) ??
+                resolvePlace(geo, item.name) ??
+                resolvePlace(geo, dayLoc);
           return c ? { item, dayIndex, lat: c.lat, lng: c.lng } : null;
         })
         .filter(Boolean) as { item: PlanItem; dayIndex: number; lat: number; lng: number }[],

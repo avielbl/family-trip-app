@@ -382,7 +382,7 @@ PLANNING RULES:
 7. Bilingual: name/nameHe and notes/notesHe (Hebrew).
 
 OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
-{"dayIndex":0,"title":"","titleHe":"","location":"","locationHe":"","items":[
+{"dayIndex":0,"title":"","titleHe":"","location":"","locationHe":"","summary":"one-sentence overview of the day","summaryHe":"","items":[
  {"kind":"activity|meal|drive","name":"","nameHe":"","startTime":"09:00","durationMinutes":90,"location":"","website":null,"price":null,"openingHours":null,"notes":"","notesHe":"","from":null,"to":null,"distanceKm":null}
 ]}`;
       const raw = await generateText(prompt, 32768);
@@ -426,7 +426,7 @@ OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
           driving: existing?.driving ?? [],
           highlights: existing?.highlights ?? [],
           restaurants: existing?.restaurants ?? [],
-          plan: { ...(existing?.plan ?? {}), items },
+          plan: { ...(existing?.plan ?? {}), items, summary: str(item.summary), summaryHe: str(item.summaryHe) },
         });
       }
     } catch (e) {
@@ -711,6 +711,21 @@ function ItineraryCard({
         />
       )}
 
+      {/* One-line day summary */}
+      {(isRTL ? tripDay?.plan?.summaryHe || tripDay?.plan?.summary : tripDay?.plan?.summary) && (
+        <div
+          style={{
+            padding: '8px 12px',
+            fontSize: 13,
+            fontStyle: 'italic',
+            color: 'var(--text-muted)',
+            borderBottom: '1px solid var(--border-color, #e5e7eb)',
+          }}
+        >
+          {isRTL ? tripDay?.plan?.summaryHe || tripDay?.plan?.summary : tripDay?.plan?.summary}
+        </div>
+      )}
+
       {/* Flights */}
       {dayFlights.length > 0 && (
         <div className="itinerary-section">
@@ -723,8 +738,9 @@ function ItineraryCard({
         </div>
       )}
 
-      {/* Activities from Firebase highlights */}
-      {dayHighlights.length > 0 && (
+      {/* Activities from Firebase highlights — hidden once a structured plan
+          exists for the day (stale dayIndex-0 docs otherwise flood day 1) */}
+      {dayHighlights.length > 0 && !tripDay?.plan?.items?.length && (
         <div className="itinerary-section">
           <div className="itinerary-section-label">
             <Star size={13} color="#f59e0b" />

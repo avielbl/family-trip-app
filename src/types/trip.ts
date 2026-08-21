@@ -260,6 +260,8 @@ export interface PlanItem {
 
 export interface DayPlan {
   items?: PlanItem[]; // structured plan (preferred)
+  summary?: string; // one-sentence day overview
+  summaryHe?: string;
   morning?: string[];
   morningHe?: string[];
   afternoon?: string[];
