@@ -1018,3 +1018,23 @@ export async function saveNote(tripCode: string, note: TripNote): Promise<void> 
 export async function deleteNote(tripCode: string, noteId: string): Promise<void> {
   await deleteDoc(doc(db, 'trips', tripCode, 'notes', noteId));
 }
+
+// ─── Plan generation preferences (questionnaire answers, reused on regenerate) ─
+
+export interface StoredPlanPrefs {
+  interests: string[];
+  pace: string;
+  budget: string;
+  meals: string;
+  kidsAges: string;
+  extra: string;
+}
+
+export async function savePlanPrefs(tripCode: string, prefs: StoredPlanPrefs): Promise<void> {
+  await setDoc(doc(db, 'trips', tripCode, 'settings', 'planPrefs'), prefs);
+}
+
+export async function loadPlanPrefs(tripCode: string): Promise<StoredPlanPrefs | null> {
+  const snap = await getDoc(doc(db, 'trips', tripCode, 'settings', 'planPrefs'));
+  return snap.exists() ? (snap.data() as StoredPlanPrefs) : null;
+}

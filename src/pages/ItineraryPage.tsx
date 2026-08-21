@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO, addDays } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
-import { saveTripDay } from '../firebase/tripService';
+import { saveTripDay, savePlanPrefs, loadPlanPrefs } from '../firebase/tripService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
 import type { TripDay, Hotel, Flight, DrivingSegment, Highlight, Restaurant, PlanItem } from '../types/trip';
 import { PlanItemsList, PlanQuestionnaire, type PlanPreferences } from '../components/PlanItems';
@@ -288,6 +288,8 @@ export default function ItineraryPage() {
   const { days, hotels, flights, driving, highlights, restaurants, config, tripCode, isAdmin } = useTripContext();
   const [planBusy, setPlanBusy] = useState(false);
   const [askPrefs, setAskPrefs] = useState(false);
+  const [savedPrefs, setSavedPrefs] = useState<PlanPreferences | null>(null);
+  const [summariesBusy, setSummariesBusy] = useState(false);
   const [planError, setPlanError] = useState('');
 
   // Curated suggestions are Greece-specific — only surface them on a Greece trip.
@@ -349,6 +351,8 @@ export default function ItineraryPage() {
     }
     setPlanBusy(true);
     setPlanError('');
+    // Remember the questionnaire answers on the trip for future regenerates.
+    savePlanPrefs(tripCode, prefs).catch(() => {/* best-effort */});
     try {
       const hotelLines = hotels
         .map((h) => `- ${h.name} in ${h.city}: ${(h.checkIn ?? '').slice(0, 10)} to ${(h.checkOut ?? '').slice(0, 10)}`)
@@ -436,6 +440,49 @@ OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
     }
   }
 
+  // One-time: write a one-sentence summary onto days that already have a
+  // structured plan but no summary — without touching the plan items.
+  async function handleGenerateSummaries() {
+    if (!config || !tripCode || summariesBusy) return;
+    if (!hasAiKey()) {
+      setPlanError(isRTL ? 'יש להגדיר מפתח AI בעמוד הניהול' : 'Configure an AI key on the Admin page first');
+      return;
+    }
+    setSummariesBusy(true);
+    setPlanError('');
+    try {
+      const targets = days.filter((d) => d.plan?.items?.length && !d.plan?.summary);
+      const digest = targets
+        .map((d) => {
+          const names = (d.plan?.items ?? []).map((i) => `${i.kind}: ${i.name}`).join('; ');
+          return `Day ${d.dayIndex} (${d.date}, ${d.location}): ${names}`;
+        })
+        .join('\n');
+      const prompt = `For each day below of a family trip to ${config.destination || config.tripName}, write ONE engaging summary sentence (max 20 words) in English and one in Hebrew.
+${digest}
+Return ONLY a valid JSON array: [{"dayIndex":0,"summary":"","summaryHe":""}]`;
+      const raw = await generateText(prompt, 8192);
+      const parsed = JSON.parse(stripJsonFences(raw)) as Array<Record<string, unknown>>;
+      for (const row of parsed) {
+        const di = Number(row.dayIndex);
+        const day = targets.find((d) => d.dayIndex === di);
+        if (!day || typeof row.summary !== 'string') continue;
+        await saveTripDay(tripCode, {
+          ...day,
+          plan: {
+            ...(day.plan ?? {}),
+            summary: row.summary,
+            summaryHe: typeof row.summaryHe === 'string' ? row.summaryHe : undefined,
+          },
+        });
+      }
+    } catch (e) {
+      setPlanError((e as Error).message);
+    } finally {
+      setSummariesBusy(false);
+    }
+  }
+
   async function handleSaveDay(day: TripDay) {
     if (!tripCode) return;
     await saveTripDay(tripCode, day);
@@ -456,9 +503,14 @@ OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
           <button
             className="admin-btn primary"
-            onClick={() => {
+            onClick={async () => {
               const overwrite = days.some((d) => d.plan?.items?.length);
               if (overwrite && !window.confirm(isRTL ? 'קיימת תוכנית — להחליף אותה?' : 'A plan exists — replace it?')) return;
+              if (tripCode) {
+                try {
+                  setSavedPrefs((await loadPlanPrefs(tripCode)) as PlanPreferences | null);
+                } catch { /* no saved prefs */ }
+              }
               setAskPrefs(true);
             }}
             disabled={planBusy}
@@ -468,6 +520,14 @@ OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
               ? (isRTL ? 'יוצר תוכנית...' : 'Generating plan...')
               : (isRTL ? 'צור תוכנית עם AI' : 'Generate plan with AI')}
           </button>
+          {days.some((d) => d.plan?.items?.length && !d.plan?.summary) && (
+            <button className="admin-btn secondary" onClick={handleGenerateSummaries} disabled={summariesBusy}>
+              <Wand2 size={14} />
+              {summariesBusy
+                ? (isRTL ? 'כותב תקצירים...' : 'Writing summaries...')
+                : (isRTL ? 'הוסף תקצירי ימים' : 'Add day summaries')}
+            </button>
+          )}
           {planError && <span className="setup-error" style={{ fontSize: 12 }}>{planError}</span>}
         </div>
       )}
@@ -475,6 +535,7 @@ OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
       {askPrefs && (
         <PlanQuestionnaire
           isRTL={isRTL}
+          initial={savedPrefs}
           onCancel={() => setAskPrefs(false)}
           onSubmit={(prefs) => {
             setAskPrefs(false);

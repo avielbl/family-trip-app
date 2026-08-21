@@ -325,20 +325,22 @@ const INTERESTS = [
 export function PlanQuestionnaire({
   isRTL,
   defaultKidsAges,
+  initial,
   onCancel,
   onSubmit,
 }: {
   isRTL: boolean;
   defaultKidsAges?: string;
+  initial?: PlanPreferences | null;
   onCancel: () => void;
   onSubmit: (prefs: PlanPreferences) => void;
 }) {
-  const [interests, setInterests] = useState<string[]>(['nature', 'kids-fun']);
-  const [pace, setPace] = useState<PlanPreferences['pace']>('balanced');
-  const [budget, setBudget] = useState<PlanPreferences['budget']>('moderate');
-  const [meals, setMeals] = useState<PlanPreferences['meals']>('mixed');
-  const [kidsAges, setKidsAges] = useState(defaultKidsAges ?? '');
-  const [extra, setExtra] = useState('');
+  const [interests, setInterests] = useState<string[]>(initial?.interests ?? ['nature', 'kids-fun']);
+  const [pace, setPace] = useState<PlanPreferences['pace']>(initial?.pace ?? 'balanced');
+  const [budget, setBudget] = useState<PlanPreferences['budget']>(initial?.budget ?? 'moderate');
+  const [meals, setMeals] = useState<PlanPreferences['meals']>(initial?.meals ?? 'mixed');
+  const [kidsAges, setKidsAges] = useState(initial?.kidsAges ?? defaultKidsAges ?? '');
+  const [extra, setExtra] = useState(initial?.extra ?? '');
 
   const row = (label: string, children: React.ReactNode) => (
     <div style={{ marginBottom: 12 }}>
