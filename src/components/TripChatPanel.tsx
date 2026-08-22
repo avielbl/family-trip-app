@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, X, MessageCircle, Check, XCircle } from 'lucide-react';
+import { Send, X, MessageCircle, Check, XCircle, HelpCircle } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { callAI, buildChatSystemPrompt, aiErrorMessage } from '../firebase/aiService';
 import { saveHighlight, saveRestaurant, saveDrivingSegment, deleteHighlight, deleteRestaurant, deleteDrivingSegment, saveTripDay } from '../firebase/tripService';
@@ -525,6 +525,58 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
 
   if (!open) return null;
 
+  function showHelp() {
+    const helpId = 'help';
+    const content = isRTL
+      ? `🧭 מה אני יודע לעשות?
+
+💬 לשאול אותי הכול על הטיול:
+אני מכיר את הימים, המלונות והתאריכים, הטיסות, מסלולי הנסיעה, האטרקציות, המסעדות, תוכנית הימים — וגם את ההערות הפתוחות שלכם מעמוד "הערות".
+לדוגמה: "מה מתוכנן ליום 3?", "כמה זמן נוסעים מקוטור לבודווה?", "תמליץ על חוף מתאים לילדים ליד המלון".
+
+🪄 לבקש שינויים (למנהל הטיול):
+כל שינוי מוצג ככרטיס אישור — שום דבר לא קורה בלי אישורכם:
+• הוספת פעילות/ארוחה/נסיעה לתוכנית של יום ("הוסיפו את מנזר אוסטרוג לתוכנית של יום 7")
+• הוספת אטרקציה, מסעדה או מסלול נסיעה לרשימות
+• מחיקת אטרקציה/מסעדה/מסלול
+• עדכון כותרת או מיקום של יום
+• כולם (גם לא מנהלים): הוספת מיקום לתחזית מזג האוויר
+
+📝 הערות משפחתיות:
+כתבו תובנות בעמוד "הערות" ("המסעדה סגורה בשני") — אני מתחשב בהן, ובכפתור "נתח עם AI" אציע שינויים לתוכנית לפיהן.
+
+💡 טיפים:
+• בקשו בקשה אחת בכל פעם, קצרה וממוקדת, עם מספר יום
+• קיבלתם ⚠️? נסחו מחדש בקצרה
+• פריט שאושר לתוכנית מופיע גם במפה`
+      : `🧭 What can I do?
+
+💬 Ask me anything about the trip:
+I know the days, hotels and dates, flights, driving routes, attractions, restaurants, the day plans — and your open notes from the Notes page.
+E.g.: "What's planned for day 3?", "How long is the drive from Kotor to Budva?", "Recommend a kid-friendly beach near the hotel".
+
+🪄 Request changes (trip admin):
+Every change appears as an approval card — nothing happens without your approval:
+• Add an activity/meal/drive to a day's plan ("Add Ostrog Monastery to day 7's plan")
+• Add an attraction, restaurant, or driving route to the lists
+• Delete an attraction/restaurant/route
+• Update a day's title or location
+• Everyone (non-admins too): add a weather location
+
+📝 Family notes:
+Write observations on the Notes page ("the restaurant is closed on Mondays") — I take them into account, and the "Analyze with AI" button asks me to propose plan changes based on them.
+
+💡 Tips:
+• One short, focused request at a time, with a day number
+• Got a ⚠️? Rephrase briefly
+• Approved plan items also appear on the map`;
+    setMessages((prev) =>
+      prev.some((m) => m.id === helpId)
+        ? prev
+        : [...prev, { id: helpId, role: 'assistant' as const, content, actions: [] }]
+    );
+  }
+
   return (
     <div className="chat-overlay" onClick={onClose}>
       <div
@@ -538,9 +590,14 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
             <MessageCircle size={18} />
             <span>{isRTL ? 'עוזר טיול AI' : 'TripIt AI Assistant'}</span>
           </div>
-          <button className="chat-close-btn" onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button className="chat-close-btn" onClick={showHelp} title={isRTL ? 'עזרה' : 'Help'}>
+              <HelpCircle size={18} />
+            </button>
+            <button className="chat-close-btn" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Messages */}
