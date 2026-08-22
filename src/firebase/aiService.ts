@@ -465,8 +465,16 @@ ACTION FORMAT (admin only — use ONLY when user explicitly asks to add or delet
 
 <action type="update_trip_day">{"dayIndex": 0, "title": "Arrival in Thessaloniki", "titleHe": "הגעה לסלוניקי", "location": "Thessaloniki", "locationHe": "סלוניקי"}</action>
 
+<action type="add_plan_item">{"dayIndex": 6, "kind": "activity", "name": "Ostrog Monastery", "nameHe": "מנזר אוסטרוג", "startTime": "10:30", "durationMinutes": 90, "location": "Ostrog, Montenegro", "website": null, "price": null, "openingHours": null, "notes": "", "notesHe": ""}</action>
+
 Use update_trip_day when the user wants to change a day's location or title. dayIndex is 0-based.
 You may omit fields you don't need to change (title, titleHe, location, locationHe — include only what changes).
+Use add_plan_item when the user wants something added to a day's PLAN/itinerary (an activity, meal, or drive at a time of day). kind is "activity", "meal", or "drive" (drives also take "from","to","distanceKm").
+
+ACTION TAG RULES (CRITICAL):
+- Write the tag EXACTLY as shown: plain text, real double quotes, real newlines. NEVER escape quotes (\") and NEVER write literal \n sequences.
+- Put each action tag on its own line at the END of your reply, and keep the reply before it SHORT so the tag is never cut off.
+- NEVER say you added/changed/deleted something — you cannot. Emitting a tag only PROPOSES the change; the user must approve it. Phrase it as a proposal ("אישרו את הפעולה למטה" / "approve the action below").
 
 CONVERSATION HISTORY:
 `;

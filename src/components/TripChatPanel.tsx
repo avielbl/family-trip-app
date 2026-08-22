@@ -21,6 +21,7 @@ const ALLOWED_ACTION_TYPES = [
   'delete_restaurant',
   'delete_driving_route',
   'update_trip_day',
+  'add_plan_item',
 ] as const;
 
 type ChatActionType = (typeof ALLOWED_ACTION_TYPES)[number];
@@ -49,6 +50,7 @@ const ACTION_LABELS: Record<ChatActionType, { en: string; he: string }> = {
   delete_restaurant:     { en: 'Delete Restaurant',    he: 'מחיקת מסעדה' },
   delete_driving_route:  { en: 'Delete Driving Route', he: 'מחיקת מסלול נסיעה' },
   update_trip_day:       { en: 'Update Day',           he: 'עדכון יום' },
+  add_plan_item:         { en: 'Add to Day Plan',      he: 'הוספה לתוכנית היום' },
 };
 
 /** Max characters a user message can be (prevents prompt injection via very long input). */
@@ -71,8 +73,15 @@ function unwrapJsonObject(text: string): string {
  * 1. XML-style: <action type="add_highlight">{...}</action>  (preferred)
  * 2. JSON array: [{"action":"add_highlight","data":{...}}, ...]  (fallback when AI ignores tag format)
  */
-function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatAction, 'status'>[] } {
+function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatAction, 'status'>[]; hadBrokenAction: boolean } {
   const actions: Omit<ChatAction, 'status'>[] = [];
+  let hadBrokenAction = false;
+
+  // Models sometimes emit the action tag JSON-escaped (type=\"...\", literal
+  // \n). When that signature is present, unescape before parsing.
+  if (/<action type=\\"/i.test(rawText)) {
+    rawText = rawText.replace(/\\"/g, '"').replace(/\\n/g, '\n');
+  }
 
   // ── Try JSON array format first ────────────────────────────────────────────
   const trimmed = rawText.trim();
@@ -93,7 +102,7 @@ function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatA
           actions.push({ id: `action-${Date.now()}-${i}`, type, data });
         });
         // No surrounding text when AI returned only JSON
-        return { cleanText: '', actions };
+        return { cleanText: '', actions, hadBrokenAction };
       }
     } catch { /* not valid JSON, fall through to XML tag parsing */ }
   }
@@ -110,12 +119,19 @@ function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatA
           type: type as ChatActionType,
           data,
         });
-      } catch { /* ignore malformed action JSON */ }
+      } catch {
+        hadBrokenAction = true; // malformed action JSON
+      }
+      return '';
+    })
+    // A truncated tag (reply cut off mid-action) — remove the fragment and flag.
+    .replace(/<action[^]*$/i, () => {
+      hadBrokenAction = true;
       return '';
     })
     .trim();
 
-  return { cleanText, actions };
+  return { cleanText, actions, hadBrokenAction };
 }
 
 // ─── Data sanitizers — strip unsafe input before saving to Firestore ──────────
@@ -231,7 +247,13 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
 
       const fullPrompt = `${systemPrompt}${history ? `${history}\n` : ''}User: ${userText}`;
       const raw = await callAI(fullPrompt);
-      const { cleanText, actions } = parseActions(raw);
+      const { cleanText, actions, hadBrokenAction } = parseActions(raw);
+      const brokenNote =
+        hadBrokenAction && actions.length === 0
+          ? (isRTL
+              ? '\n\n⚠️ ניסיתי לבצע פעולה אך היא לא נקלטה — בקשו שוב במשפט קצר וממוקד.'
+              : '\n\n⚠️ I attempted an action but it did not register — please ask again briefly.')
+          : '';
 
       // SECURITY: for non-admin users, drop all content-modifying actions
       const safeActions = actions.filter((a) =>
@@ -252,7 +274,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: cleanText || autoSummary || '…',
+          content: (cleanText || autoSummary || '…') + brokenNote,
           actions: safeActions.map((a) => ({ ...a, status: 'pending' as const })),
         },
       ]);
@@ -362,7 +384,15 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         if (dayIndex < 0) return;
         // Merge over existing day or create new entry
         const existing = days.find((d) => d.dayIndex === dayIndex);
-        const updated = {
+        // Merge onto the FULL existing day — a partial object would wipe the
+        // day's plan and linked content on save.
+        const updated: import('../types/trip').TripDay = {
+          flights: [],
+          hotels: [],
+          driving: [],
+          highlights: [],
+          restaurants: [],
+          ...(existing ?? {}),
           dayIndex,
           date: sanitizeString(action.data.date ?? existing?.date ?? ''),
           title: sanitizeString(action.data.title ?? existing?.title ?? ''),
@@ -370,7 +400,51 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
           location: sanitizeString(action.data.location ?? existing?.location ?? ''),
           locationHe: sanitizeString(action.data.locationHe ?? existing?.locationHe ?? ''),
         };
-        await saveTripDay(tripCode, updated as import('../types/trip').TripDay);
+        await saveTripDay(tripCode, updated);
+
+      } else if (action.type === 'add_plan_item') {
+        const dayIndex = sanitizeNumber(action.data.dayIndex, -1);
+        if (dayIndex < 0) return;
+        const existing = days.find((d) => d.dayIndex === dayIndex);
+        const kind = (['activity', 'meal', 'drive'] as const).includes(
+          action.data.kind as 'activity' | 'meal' | 'drive'
+        )
+          ? (action.data.kind as 'activity' | 'meal' | 'drive')
+          : 'activity';
+        const item: import('../types/trip').PlanItem = {
+          id: `plan-chat-${Date.now()}`,
+          kind,
+          name: sanitizeString(action.data.name) || 'New plan item',
+          nameHe: sanitizeString(action.data.nameHe) || undefined,
+          startTime: sanitizeString(action.data.startTime) || undefined,
+          durationMinutes: action.data.durationMinutes != null ? sanitizeNumber(action.data.durationMinutes, 0) || undefined : undefined,
+          location: sanitizeString(action.data.location) || undefined,
+          website: sanitizeString(action.data.website) || undefined,
+          price: sanitizeString(action.data.price) || undefined,
+          openingHours: sanitizeString(action.data.openingHours) || undefined,
+          notes: sanitizeString(action.data.notes) || undefined,
+          notesHe: sanitizeString(action.data.notesHe) || undefined,
+          from: kind === 'drive' ? sanitizeString(action.data.from) || undefined : undefined,
+          to: kind === 'drive' ? sanitizeString(action.data.to) || undefined : undefined,
+          distanceKm: action.data.distanceKm != null ? sanitizeNumber(action.data.distanceKm, 0) || undefined : undefined,
+          approved: true, // the user explicitly approved this action card
+        };
+        const day: import('../types/trip').TripDay = existing ?? {
+          dayIndex,
+          date: '',
+          title: `Day ${dayIndex + 1}`,
+          titleHe: `יום ${dayIndex + 1}`,
+          location: sanitizeString(action.data.location) || '',
+          flights: [],
+          hotels: [],
+          driving: [],
+          highlights: [],
+          restaurants: [],
+        };
+        await saveTripDay(tripCode, {
+          ...day,
+          plan: { ...(day.plan ?? {}), items: [...(day.plan?.items ?? []), item] },
+        });
 
       } else if (action.type === 'add_weather_location') {
         const city = sanitizeString(action.data.city);
