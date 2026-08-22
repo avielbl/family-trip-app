@@ -67,9 +67,25 @@ function extractJSON(text: string): string {
 
 // ─── Provider Adapters ───────────────────────────────────────────────────────
 
+/**
+ * Call options. `json: false` is REQUIRED for free-text replies that embed
+ * <action> tags — JSON mode forces the model to escape every quote (producing
+ * unparseable `<action type=\"...`) and wastes budget on escaping.
+ */
+export interface CallAIOptions {
+  json?: boolean; // default true (structured extraction/suggestions)
+  maxTokens?: number; // default 4096
+  onTruncated?: () => void; // invoked when the model hit the output limit
+}
+
 type GeminiPart = { inline_data: { mime_type: string; data: string } } | { text: string };
 
-async function callGemini(config: AIConfig, prompt: string, images?: File[]): Promise<string> {
+async function callGemini(
+  config: AIConfig,
+  prompt: string,
+  images?: File[],
+  opts?: CallAIOptions
+): Promise<string> {
   const parts: GeminiPart[] = [];
   if (images?.length) {
     for (const file of images) {
@@ -82,11 +98,12 @@ async function callGemini(config: AIConfig, prompt: string, images?: File[]): Pr
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
   const body: {
     contents: Array<{ parts: GeminiPart[] }>;
-    generationConfig?: { responseMimeType: string };
+    generationConfig?: { responseMimeType?: string; maxOutputTokens?: number };
   } = { contents: [{ parts }] };
-  // JSON mode only supported for non-vision requests
-  if (!images?.length) {
-    body.generationConfig = { responseMimeType: 'application/json' };
+  body.generationConfig = { maxOutputTokens: opts?.maxTokens ?? 4096 };
+  // JSON mode: structured calls only, and unsupported for vision requests.
+  if (!images?.length && opts?.json !== false) {
+    body.generationConfig.responseMimeType = 'application/json';
   }
 
   const res = await fetch(url, {
@@ -101,6 +118,7 @@ async function callGemini(config: AIConfig, prompt: string, images?: File[]): Pr
     throw new Error(`Gemini ${res.status}: ${err}`);
   }
   const data = await res.json();
+  if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') opts?.onTruncated?.();
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
@@ -108,7 +126,12 @@ type GroqContentPart =
   | { type: 'image_url'; image_url: { url: string } }
   | { type: 'text'; text: string };
 
-async function callGroq(config: AIConfig, prompt: string, images?: File[]): Promise<string> {
+async function callGroq(
+  config: AIConfig,
+  prompt: string,
+  images?: File[],
+  opts?: CallAIOptions
+): Promise<string> {
   let messageContent: string | GroqContentPart[];
 
   if (images?.length) {
@@ -132,7 +155,7 @@ async function callGroq(config: AIConfig, prompt: string, images?: File[]): Prom
     body: JSON.stringify({
       model: config.model,
       messages: [{ role: 'user', content: messageContent }],
-      max_tokens: 4096,
+      max_tokens: opts?.maxTokens ?? 4096,
     }),
   });
 
@@ -142,6 +165,7 @@ async function callGroq(config: AIConfig, prompt: string, images?: File[]): Prom
     throw new Error(`Groq ${res.status}: ${err}`);
   }
   const data = await res.json();
+  if (data.choices?.[0]?.finish_reason === 'length') opts?.onTruncated?.();
   return data.choices?.[0]?.message?.content ?? '';
 }
 
@@ -149,7 +173,12 @@ type ClaudeContentBlock =
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   | { type: 'text'; text: string };
 
-async function callClaude(config: AIConfig, prompt: string, images?: File[]): Promise<string> {
+async function callClaude(
+  config: AIConfig,
+  prompt: string,
+  images?: File[],
+  opts?: CallAIOptions
+): Promise<string> {
   const content: ClaudeContentBlock[] = [];
   if (images?.length) {
     for (const file of images) {
@@ -169,7 +198,7 @@ async function callClaude(config: AIConfig, prompt: string, images?: File[]): Pr
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: 4096,
+      max_tokens: opts?.maxTokens ?? 4096,
       messages: [{ role: 'user', content }],
     }),
   });
@@ -180,18 +209,23 @@ async function callClaude(config: AIConfig, prompt: string, images?: File[]): Pr
     throw new Error(`Claude ${res.status}: ${err}`);
   }
   const data = await res.json();
+  if (data.stop_reason === 'max_tokens') opts?.onTruncated?.();
   return data.content?.[0]?.text ?? '';
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export async function callAI(prompt: string, images?: File[]): Promise<string> {
+export async function callAI(
+  prompt: string,
+  images?: File[],
+  opts?: CallAIOptions
+): Promise<string> {
   const config = getAIConfig();
   if (!config.apiKey) throw new Error('NO_KEY');
   switch (config.provider) {
-    case 'gemini': return callGemini(config, prompt, images);
-    case 'groq':   return callGroq(config, prompt, images);
-    case 'claude': return callClaude(config, prompt, images);
+    case 'gemini': return callGemini(config, prompt, images, opts);
+    case 'groq':   return callGroq(config, prompt, images, opts);
+    case 'claude': return callClaude(config, prompt, images, opts);
     default: throw new Error(`Unknown provider: ${config.provider}`);
   }
 }
@@ -474,7 +508,7 @@ Use add_plan_item when the user wants something added to a day's PLAN/itinerary 
 ACTION TAG RULES (CRITICAL):
 - The payload must be STRICT JSON: double quotes around every key and string, no trailing commas, and ALWAYS end the tag with </action>.
 - Write the tag EXACTLY as shown: plain text, real double quotes, real newlines. NEVER escape quotes (backslash-quote) and NEVER write literal backslash-n sequences.
-- Put each action tag on its own line at the END of your reply, and keep the reply before it SHORT so the tag is never cut off.
+- Put the action tag(s) FIRST — before any explanation — each on its own line. Anything you write after them may be cut off, but the actions must survive. Keep the explanation short (2-3 sentences).
 - NEVER say you added/changed/deleted something — you cannot. Emitting a tag only PROPOSES the change; the user must approve it. Phrase it as a proposal ("אישרו את הפעולה למטה" / "approve the action below").
 
 CONVERSATION HISTORY:

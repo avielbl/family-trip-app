@@ -287,9 +287,37 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         .join('\n');
 
       const fullPrompt = `${systemPrompt}${history ? `${history}\n` : ''}User: ${userText}`;
-      const raw = await callAI(fullPrompt);
-      console.debug('[TripChat] raw AI reply:', raw);
-      const { cleanText, actions, hadBrokenAction, brokenSnippet } = parseActions(raw);
+      // Chat replies are free text with embedded <action> tags: JSON mode
+      // would escape every quote and break them. A bigger budget keeps Hebrew
+      // replies from truncating mid-tag.
+      let truncated = false;
+      const chatOpts = {
+        json: false,
+        maxTokens: 8192,
+        onTruncated: () => { truncated = true; },
+      };
+      const raw = await callAI(fullPrompt, undefined, chatOpts);
+      console.debug('[TripChat] raw AI reply:', raw, { truncated });
+      let parsed = parseActions(raw);
+
+      // The reply hit the output limit before finishing its action tag: ask
+      // again for the action ALONE (no prose), which always fits.
+      if (parsed.actions.length === 0 && (truncated || parsed.hadBrokenAction)) {
+        const retryPrompt =
+          `${fullPrompt}\n\nYour previous reply was cut off before its action tag completed. ` +
+          `Reply with ONLY the action tag(s) for the user's last request — no explanation, no other text.`;
+        try {
+          const retryRaw = await callAI(retryPrompt, undefined, { json: false, maxTokens: 2048 });
+          console.debug('[TripChat] retry reply:', retryRaw);
+          const retryParsed = parseActions(retryRaw);
+          if (retryParsed.actions.length > 0) {
+            // Keep the original prose, take the actions from the retry.
+            parsed = { ...parsed, actions: retryParsed.actions, hadBrokenAction: false, brokenSnippet: '' };
+          }
+        } catch { /* keep the original warning */ }
+      }
+
+      const { cleanText, actions, hadBrokenAction, brokenSnippet } = parsed;
       const brokenNote =
         hadBrokenAction && actions.length === 0
           ? (isRTL
