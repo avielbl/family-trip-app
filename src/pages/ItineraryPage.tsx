@@ -285,11 +285,22 @@ interface DayData {
 export default function ItineraryPage() {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
-  const { days, hotels, flights, driving, highlights, restaurants, config, tripCode, isAdmin } = useTripContext();
+  const { days, hotels, flights, driving, highlights, restaurants, config, tripCode, isAdmin, todayDayIndex } = useTripContext();
   const [planBusy, setPlanBusy] = useState(false);
   const [askPrefs, setAskPrefs] = useState(false);
   const [savedPrefs, setSavedPrefs] = useState<PlanPreferences | null>(null);
   const [summariesBusy, setSummariesBusy] = useState(false);
+  // Plan review: one day open at a time by default (today, or day 1 before the
+  // trip) — the full list was an endless scroll.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [initialised, setInitialised] = useState(false);
+  const toggleDay = (i: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
   const [planError, setPlanError] = useState('');
 
   // Curated suggestions are Greece-specific — only surface them on a Greece trip.
@@ -488,6 +499,12 @@ Return ONLY a valid JSON array: [{"dayIndex":0,"summary":"","summaryHe":""}]`;
     await saveTripDay(tripCode, day);
   }
 
+  const defaultOpenDay = todayDayIndex >= 0 && todayDayIndex < totalDays ? todayDayIndex : 0;
+  if (!initialised && totalDays > 0) {
+    setExpanded(new Set([defaultOpenDay]));
+    setInitialised(true);
+  }
+
   return (
     <div className="itinerary-page">
       <h1 className="page-title">
@@ -544,6 +561,52 @@ Return ONLY a valid JSON array: [{"dayIndex":0,"summary":"","summaryHe":""}]`;
         />
       )}
 
+      {/* ─── Day jump bar + expand controls ─────────────────────── */}
+      {totalDays > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6 }}>
+            {itinerary.map((d) => {
+              const isToday = d.dayIndex === todayDayIndex;
+              const isOpen = expanded.has(d.dayIndex);
+              return (
+                <button
+                  key={d.dayIndex}
+                  className={`day-tab ${isOpen ? 'active' : ''} ${isToday ? 'today' : ''}`}
+                  style={{ flex: '0 0 auto' }}
+                  title={format(d.date, 'EEE, MMM d')}
+                  onClick={() => {
+                    setExpanded(new Set([d.dayIndex]));
+                    requestAnimationFrame(() => {
+                      document
+                        .getElementById(`itinerary-day-${d.dayIndex}`)
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    });
+                  }}
+                >
+                  {d.dayIndex + 1}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 8, fontSize: 12 }}>
+            <button
+              className="admin-btn secondary"
+              style={{ fontSize: 12 }}
+              onClick={() => setExpanded(new Set(itinerary.map((d) => d.dayIndex)))}
+            >
+              {isRTL ? 'פתח הכול' : 'Expand all'}
+            </button>
+            <button
+              className="admin-btn secondary"
+              style={{ fontSize: 12 }}
+              onClick={() => setExpanded(new Set())}
+            >
+              {isRTL ? 'סגור הכול' : 'Collapse all'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="itinerary-table-container">
         {/* ─── Desktop Table ─────────────────────────────────────── */}
         <table className="itinerary-table">
@@ -576,6 +639,9 @@ Return ONLY a valid JSON array: [{"dayIndex":0,"summary":"","summaryHe":""}]`;
             isAdmin={isAdmin}
             onSaveDay={handleSaveDay}
             tripStart={tripStart}
+            isToday={day.dayIndex === todayDayIndex}
+            expanded={expanded.has(day.dayIndex)}
+            onToggle={() => toggleDay(day.dayIndex)}
           />
         ))}
       </div>
@@ -716,15 +782,22 @@ function ItineraryCard({
   isAdmin,
   onSaveDay,
   tripStart,
+  isToday,
+  expanded = true,
+  onToggle,
 }: {
   day: DayData;
   isRTL: boolean;
   isAdmin?: boolean;
   onSaveDay?: (d: TripDay) => Promise<void>;
   tripStart?: Date;
+  isToday?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const { dayIndex, date, tripDay, suggestion, hotel, flights: dayFlights, driving: dayDriving, highlights: dayHighlights, restaurants: dayRestaurants } = day;
+  const planItemCount = tripDay?.plan?.items?.length ?? 0;
 
   const title = isRTL
     ? (tripDay?.titleHe || tripDay?.title || suggestion.titleHe)
@@ -734,9 +807,17 @@ function ItineraryCard({
     : (tripDay?.location || suggestion.location);
 
   return (
-    <div className="itinerary-card">
-      {/* Header */}
-      <div className="itinerary-card-header">
+    <div
+      className="itinerary-card"
+      id={`itinerary-day-${dayIndex}`}
+      style={isToday ? { outline: '2px solid var(--blue-500, #3b82f6)' } : undefined}
+    >
+      {/* Header — tap to expand/collapse */}
+      <div
+        className="itinerary-card-header"
+        onClick={onToggle}
+        style={onToggle ? { cursor: 'pointer' } : undefined}
+      >
         <div className="day-badge">{dayIndex + 1}</div>
         <div className="itinerary-card-title-group">
           <div className="itinerary-card-title">{title}</div>
@@ -751,13 +832,46 @@ function ItineraryCard({
           <button
             className="admin-icon-btn"
             style={{ marginInlineStart: 'auto' }}
-            onClick={() => setEditing((e) => !e)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing((v) => !v);
+            }}
             title={isRTL ? 'עריכת היום' : 'Edit day'}
           >
             <Pencil size={14} />
           </button>
         )}
+        {onToggle && (
+          <ChevronRight
+            size={16}
+            style={{
+              marginInlineStart: isAdmin && onSaveDay ? 4 : 'auto',
+              transform: expanded ? 'rotate(90deg)' : isRTL ? 'rotate(180deg)' : 'none',
+              transition: 'transform 120ms',
+              flex: '0 0 auto',
+            }}
+          />
+        )}
       </div>
+
+      {/* Collapsed peek: summary + what the day holds */}
+      {!expanded && (
+        <div style={{ padding: '6px 12px 10px', fontSize: 12, color: 'var(--text-muted)' }}>
+          {(isRTL ? tripDay?.plan?.summaryHe || tripDay?.plan?.summary : tripDay?.plan?.summary) && (
+            <div style={{ fontStyle: 'italic', marginBottom: 4 }}>
+              {isRTL ? tripDay?.plan?.summaryHe || tripDay?.plan?.summary : tripDay?.plan?.summary}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {planItemCount > 0 && <span>📋 {planItemCount}</span>}
+            {dayFlights.length > 0 && <span>✈ {dayFlights.length}</span>}
+            {dayDriving.length > 0 && <span>🚗 {dayDriving.length}</span>}
+            {dayHighlights.length > 0 && <span>⭐ {dayHighlights.length}</span>}
+            {dayRestaurants.length > 0 && <span>🍽 {dayRestaurants.length}</span>}
+            {hotel && <span>🏨 {hotel.city || hotel.name}</span>}
+          </div>
+        </div>
+      )}
 
       {editing && onSaveDay && (
         <DayPlanEditor
@@ -772,6 +886,8 @@ function ItineraryCard({
         />
       )}
 
+      {expanded && (
+      <>
       {/* One-line day summary */}
       {(isRTL ? tripDay?.plan?.summaryHe || tripDay?.plan?.summary : tripDay?.plan?.summary) && (
         <div
@@ -926,10 +1042,14 @@ function ItineraryCard({
       )}
 
       {/* Tips */}
-      <div className="itinerary-tip">
-        <span className="tip-icon">💡</span>
-        <span>{isRTL ? suggestion.tipsHe : suggestion.tips}</span>
-      </div>
+      {(isRTL ? suggestion.tipsHe : suggestion.tips) && (
+        <div className="itinerary-tip">
+          <span className="tip-icon">💡</span>
+          <span>{isRTL ? suggestion.tipsHe : suggestion.tips}</span>
+        </div>
+      )}
+      </>
+      )}
     </div>
   );
 }

@@ -403,7 +403,7 @@ export interface ChatContext {
  */
 export function buildChatSystemPrompt(ctx: ChatContext): string {
   const dayLines = ctx.days.length
-    ? ctx.days.map((d) => `  Day ${d.dayIndex + 1} (${d.date}): ${d.location}`).join('\n')
+    ? ctx.days.map((d) => `  Day ${d.dayIndex + 1} [dayIndex=${d.dayIndex}] (${d.date}): ${d.location}`).join('\n')
     : '  (no days configured yet)';
 
   // Exclude sensitive: confirmationCode, wifiPassword, phone
@@ -501,7 +501,10 @@ ACTION FORMAT (admin only — use ONLY when user explicitly asks to add or delet
 
 <action type="add_plan_item">{"dayIndex": 6, "kind": "activity", "name": "Ostrog Monastery", "nameHe": "מנזר אוסטרוג", "startTime": "10:30", "durationMinutes": 90, "location": "Ostrog, Montenegro", "website": null, "price": null, "openingHours": null, "notes": "", "notesHe": ""}</action>
 
-Use update_trip_day when the user wants to change a day's location or title. dayIndex is 0-based.
+DAY NUMBERING (CRITICAL): every action's "dayIndex" is 0-BASED. The itinerary above shows both forms —
+"Day 7 [dayIndex=6]" means the user's "day 7" MUST be sent as dayIndex 6. Never send the Day label as dayIndex.
+
+Use update_trip_day when the user wants to change a day's location or title.
 You may omit fields you don't need to change (title, titleHe, location, locationHe — include only what changes).
 Use add_plan_item when the user wants something added to a day's PLAN/itinerary (an activity, meal, or drive at a time of day). kind is "activity", "meal", or "drive" (drives also take "from","to","distanceKm").
 

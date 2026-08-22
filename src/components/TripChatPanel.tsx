@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, X, MessageCircle, Check, XCircle, HelpCircle } from 'lucide-react';
+import { Send, X, MessageCircle, Check, XCircle, HelpCircle, Trash2 } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { callAI, buildChatSystemPrompt, aiErrorMessage } from '../firebase/aiService';
 import { saveHighlight, saveRestaurant, saveDrivingSegment, deleteHighlight, deleteRestaurant, deleteDrivingSegment, saveTripDay } from '../firebase/tripService';
@@ -30,7 +30,8 @@ interface ChatAction {
   id: string;
   type: ChatActionType;
   data: Record<string, unknown>;
-  status: 'pending' | 'accepted' | 'dismissed';
+  status: 'pending' | 'accepted' | 'dismissed' | 'failed';
+  error?: string;
 }
 
 interface ChatMessage {
@@ -192,11 +193,31 @@ function sanitizeNumber(val: unknown, fallback = 0): number {
 export default function TripChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { i18n } = useTranslation();
   const {
-    tripCode, config, hotels, days, highlights, restaurants, driving, isAdmin, notes,
+    tripCode, config, hotels, days, highlights, restaurants, driving, isAdmin, notes, totalDays,
   } = useTripContext();
   const isRTL = i18n.language === 'he';
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Conversation history persists per trip so closing the panel (or the app)
+  // doesn't lose the thread. Capped to the most recent exchanges.
+  const historyKey = tripCode ? `chatHistory:${tripCode}` : null;
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (!historyKey) return [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(historyKey) ?? '[]');
+      return Array.isArray(saved) ? (saved as ChatMessage[]) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (!historyKey) return;
+    try {
+      // Drop transient loading bubbles before persisting.
+      const persistable = messages.filter((m) => m.content !== '...').slice(-40);
+      localStorage.setItem(historyKey, JSON.stringify(persistable));
+    } catch { /* storage full — history is best-effort */ }
+  }, [messages, historyKey]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -364,6 +385,36 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
     }
   }
 
+  /**
+   * Resolve a model-supplied day reference to a real 0-based index.
+   * Models frequently echo the 1-based "Day N" label they were shown, which
+   * would silently write to a day the itinerary never renders.
+   */
+  function resolveDayIndex(raw: unknown): number | null {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    let idx = Math.trunc(n);
+    if (totalDays > 0 && idx >= totalDays && idx - 1 >= 0 && idx - 1 < totalDays) idx -= 1;
+    if (idx < 0) return null;
+    if (totalDays > 0 && idx >= totalDays) return null;
+    return idx;
+  }
+
+  function failAction(msgId: string, actionId: string, error: string) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId
+          ? {
+              ...m,
+              actions: m.actions.map((a) =>
+                a.id === actionId ? { ...a, status: 'failed' as const, error } : a
+              ),
+            }
+          : m
+      )
+    );
+  }
+
   async function acceptAction(msgId: string, actionId: string) {
     const msg = messages.find((m) => m.id === msgId);
     const action = msg?.actions.find((a) => a.id === actionId);
@@ -450,8 +501,13 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         await deleteDrivingSegment(tripCode, id);
 
       } else if (action.type === 'update_trip_day') {
-        const dayIndex = sanitizeNumber(action.data.dayIndex, -1);
-        if (dayIndex < 0) return;
+        const dayIndex = resolveDayIndex(action.data.dayIndex);
+        if (dayIndex === null) {
+          failAction(msgId, actionId, isRTL
+            ? `יום לא תקין (${String(action.data.dayIndex)}) — לטיול יש ${totalDays} ימים`
+            : `Invalid day (${String(action.data.dayIndex)}) — the trip has ${totalDays} days`);
+          return;
+        }
         // Merge over existing day or create new entry
         const existing = days.find((d) => d.dayIndex === dayIndex);
         // Merge onto the FULL existing day — a partial object would wipe the
@@ -473,8 +529,13 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         await saveTripDay(tripCode, updated);
 
       } else if (action.type === 'add_plan_item') {
-        const dayIndex = sanitizeNumber(action.data.dayIndex, -1);
-        if (dayIndex < 0) return;
+        const dayIndex = resolveDayIndex(action.data.dayIndex);
+        if (dayIndex === null) {
+          failAction(msgId, actionId, isRTL
+            ? `יום לא תקין (${String(action.data.dayIndex)}) — לטיול יש ${totalDays} ימים`
+            : `Invalid day (${String(action.data.dayIndex)}) — the trip has ${totalDays} days`);
+          return;
+        }
         const existing = days.find((d) => d.dayIndex === dayIndex);
         const kind = (['activity', 'meal', 'drive'] as const).includes(
           action.data.kind as 'activity' | 'meal' | 'drive'
@@ -538,6 +599,8 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
       );
     } catch (err) {
       console.error('Chat action failed:', err);
+      const e = err as { code?: string; message?: string };
+      failAction(msgId, actionId, e.code ?? e.message ?? 'save failed');
     }
   }
 
@@ -622,6 +685,17 @@ Write observations on the Notes page ("the restaurant is closed on Mondays") —
             <button className="chat-close-btn" onClick={showHelp} title={isRTL ? 'עזרה' : 'Help'}>
               <HelpCircle size={18} />
             </button>
+            <button
+              className="chat-close-btn"
+              title={isRTL ? 'נקה שיחה' : 'Clear conversation'}
+              onClick={() => {
+                if (!window.confirm(isRTL ? 'לנקות את השיחה?' : 'Clear this conversation?')) return;
+                setMessages([]);
+                if (historyKey) localStorage.removeItem(historyKey);
+              }}
+            >
+              <Trash2 size={18} />
+            </button>
             <button className="chat-close-btn" onClick={onClose}>
               <X size={18} />
             </button>
@@ -687,6 +761,12 @@ Write observations on the Notes page ("the restaurant is closed on Mondays") —
                         : action.type === 'update_trip_day'
                           ? (isRTL ? 'עודכן' : 'Updated!')
                           : (isRTL ? 'נוסף בהצלחה' : 'Added!')}
+                    </div>
+                  )}
+                  {action.status === 'failed' && (
+                    <div className="chat-action-status" style={{ color: 'var(--red-500, #ef4444)' }}>
+                      ⚠️ {isRTL ? 'הפעולה נכשלה' : 'Action failed'}
+                      {action.error ? `: ${action.error}` : ''}
                     </div>
                   )}
                   {action.status === 'dismissed' && (
