@@ -73,19 +73,43 @@ function unwrapJsonObject(text: string): string {
  * 1. XML-style: <action type="add_highlight">{...}</action>  (preferred)
  * 2. JSON array: [{"action":"add_highlight","data":{...}}, ...]  (fallback when AI ignores tag format)
  */
-function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatAction, 'status'>[]; hadBrokenAction: boolean } {
+function tryParsePayload(raw: string): Record<string, unknown> | null {
+  const attempts = [
+    raw,
+    raw.replace(/,\s*([}\]])/g, '$1'), // trailing commas
+    raw.replace(/[\u201c\u201d\u201e]/g, '"').replace(/,\s*([}\]])/g, '$1'), // smart quotes
+  ];
+  for (const a of attempts) {
+    try {
+      const d = JSON.parse(a.trim());
+      if (d && typeof d === 'object' && !Array.isArray(d)) return d as Record<string, unknown>;
+    } catch { /* try next repair */ }
+  }
+  return null;
+}
+
+function parseActions(rawText: string): {
+  cleanText: string;
+  actions: Omit<ChatAction, 'status'>[];
+  hadBrokenAction: boolean;
+  brokenSnippet: string;
+} {
   const actions: Omit<ChatAction, 'status'>[] = [];
   let hadBrokenAction = false;
+  let brokenSnippet = '';
+  const markBroken = (snippet: string) => {
+    hadBrokenAction = true;
+    if (!brokenSnippet) brokenSnippet = snippet.slice(0, 140);
+  };
 
   // Models sometimes emit the action tag JSON-escaped (type=\"...\", literal
   // \n). When that signature is present, unescape before parsing.
-  if (/<action type=\\"/i.test(rawText)) {
+  if (/<action\s+type\s*=\s*\\"/i.test(rawText)) {
     rawText = rawText.replace(/\\"/g, '"').replace(/\\n/g, '\n');
   }
 
   // ── Try JSON array format first ────────────────────────────────────────────
   const trimmed = rawText.trim();
-  // Strip markdown code fence if present
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/);
   const jsonCandidate = fenced ? fenced[1].trim() : trimmed;
 
@@ -96,42 +120,59 @@ function parseActions(rawText: string): { cleanText: string; actions: Omit<ChatA
         arr.forEach((item: { action: string; data?: Record<string, unknown> }, i: number) => {
           const type = item.action as ChatActionType;
           // SECURITY: whitelist check
-          if (!ALLOWED_ACTION_TYPES.includes(type)) return;
+          if (!ALLOWED_ACTION_TYPES.includes(type)) return markBroken(`unknown action: ${item.action}`);
           const data = item.data ?? {};
           if (typeof data !== 'object' || Array.isArray(data)) return;
           actions.push({ id: `action-${Date.now()}-${i}`, type, data });
         });
-        // No surrounding text when AI returned only JSON
-        return { cleanText: '', actions, hadBrokenAction };
+        return { cleanText: '', actions, hadBrokenAction, brokenSnippet };
       }
     } catch { /* not valid JSON, fall through to XML tag parsing */ }
   }
 
-  // ── Parse XML-style <action> tags ─────────────────────────────────────────
-  const cleanText = unwrapJsonObject(rawText)
-    .replace(/<action type="([^"]{0,64})">([\s\S]*?)<\/action>/g, (_, type, json) => {
-      if (!ALLOWED_ACTION_TYPES.includes(type as ChatActionType)) return '';
-      try {
-        const data = JSON.parse(json.trim());
-        if (typeof data !== 'object' || Array.isArray(data) || data === null) return '';
-        actions.push({
-          id: `action-${Date.now()}-${actions.length}`,
-          type: type as ChatActionType,
-          data,
-        });
-      } catch {
-        hadBrokenAction = true; // malformed action JSON
+  // ── Parse XML-style <action> tags (tolerant: quote style, spacing) ─────────
+  let cleanText = unwrapJsonObject(rawText).replace(
+    /<action\s+type\s*=\s*["']?([\w-]{1,64})["']?\s*>([\s\S]*?)<\/action>/gi,
+    (_, type, json) => {
+      if (!ALLOWED_ACTION_TYPES.includes(type as ChatActionType)) {
+        markBroken(`unknown action type: ${type}`);
+        return '';
       }
+      const data = tryParsePayload(json);
+      if (!data) {
+        markBroken(json.trim());
+        return '';
+      }
+      actions.push({
+        id: `action-${Date.now()}-${actions.length}`,
+        type: type as ChatActionType,
+        data,
+      });
       return '';
-    })
-    // A truncated tag (reply cut off mid-action) — remove the fragment and flag.
-    .replace(/<action[^]*$/i, () => {
-      hadBrokenAction = true;
-      return '';
-    })
-    .trim();
+    }
+  );
 
-  return { cleanText, actions, hadBrokenAction };
+  // ── Recover an UNCLOSED trailing tag (reply cut off before </action>) ──────
+  const openIdx = cleanText.search(/<action\s/i);
+  if (openIdx !== -1) {
+    const fragment = cleanText.slice(openIdx);
+    cleanText = cleanText.slice(0, openIdx);
+    const m = fragment.match(/<action\s+type\s*=\s*["']?([\w-]{1,64})["']?\s*>([\s\S]*)$/i);
+    const type = m?.[1] as ChatActionType | undefined;
+    const braceStart = m?.[2]?.indexOf('{') ?? -1;
+    const braceEnd = m?.[2]?.lastIndexOf('}') ?? -1;
+    const payload =
+      m && braceStart !== -1 && braceEnd > braceStart ? m[2].slice(braceStart, braceEnd + 1) : null;
+    const data = type && ALLOWED_ACTION_TYPES.includes(type) && payload ? tryParsePayload(payload) : null;
+    if (type && data) {
+      actions.push({ id: `action-${Date.now()}-${actions.length}`, type, data });
+    } else {
+      markBroken(fragment.trim());
+    }
+  }
+  cleanText = cleanText.trim();
+
+  return { cleanText, actions, hadBrokenAction, brokenSnippet };
 }
 
 // ─── Data sanitizers — strip unsafe input before saving to Firestore ──────────
@@ -247,12 +288,13 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
 
       const fullPrompt = `${systemPrompt}${history ? `${history}\n` : ''}User: ${userText}`;
       const raw = await callAI(fullPrompt);
-      const { cleanText, actions, hadBrokenAction } = parseActions(raw);
+      console.debug('[TripChat] raw AI reply:', raw);
+      const { cleanText, actions, hadBrokenAction, brokenSnippet } = parseActions(raw);
       const brokenNote =
         hadBrokenAction && actions.length === 0
           ? (isRTL
-              ? '\n\n⚠️ ניסיתי לבצע פעולה אך היא לא נקלטה — בקשו שוב במשפט קצר וממוקד.'
-              : '\n\n⚠️ I attempted an action but it did not register — please ask again briefly.')
+              ? `\n\n⚠️ ניסיתי לבצע פעולה אך היא לא נקלטה — בקשו שוב במשפט קצר וממוקד.${brokenSnippet ? `\n[debug: ${brokenSnippet}]` : ''}`
+              : `\n\n⚠️ I attempted an action but it did not register — please ask again briefly.${brokenSnippet ? `\n[debug: ${brokenSnippet}]` : ''}`)
           : '';
 
       // SECURITY: for non-admin users, drop all content-modifying actions
