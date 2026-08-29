@@ -407,6 +407,25 @@ export function buildChatSystemPrompt(ctx: ChatContext): string {
     : '  (no days configured yet)';
 
   // Exclude sensitive: confirmationCode, wifiPassword, phone
+  // The structured day plans — WITHOUT these the assistant cannot see (let
+  // alone edit) what the itinerary already contains.
+  const planLines = ctx.days
+    .filter((d) => d.plan?.items?.length)
+    .map((d) => {
+      const items = (d.plan?.items ?? [])
+        .map(
+          (it) =>
+            `      - [id:${it.id}] ${it.startTime ?? '--:--'} ${it.kind} "${it.name}"` +
+            `${it.durationMinutes ? ` (${it.durationMinutes}m)` : ''}` +
+            `${it.location ? ` @${it.location}` : ''}` +
+            `${it.kind === 'drive' && it.from ? ` ${it.from} → ${it.to ?? ''}` : ''}` +
+            `${it.approved ? ' [approved]' : ''}`
+        )
+        .join('\n');
+      return `    Day ${d.dayIndex + 1} [dayIndex=${d.dayIndex}]:\n${items}`;
+    })
+    .join('\n');
+
   const notesLines = ctx.notes?.length
     ? ctx.notes
         .filter((n) => n.status === 'open')
@@ -455,6 +474,9 @@ OUTPUT FORMAT — CRITICAL:
 - A correct reply: "The Acropolis is Athens' top attraction, perfect for kids..."
 - A WRONG reply: {"response": "The Acropolis is..."} — never do this.
 - The ONLY structured output allowed is <action> tags (see below), and only when adding/deleting content.
+
+DAY PLANS (the structured itinerary; use these exact ids with update_plan_item / delete_plan_item):
+${planLines || '  (no structured plan yet)'}
 
 FAMILY TRIP NOTES (open observations that may affect the plan — use them when the user asks to review or amend routes/days; propose concrete <action> changes when appropriate):
 ${notesLines}
@@ -506,6 +528,14 @@ DAY NUMBERING (CRITICAL): every action's "dayIndex" is 0-BASED. The itinerary ab
 
 Use update_trip_day when the user wants to change a day's location or title.
 You may omit fields you don't need to change (title, titleHe, location, locationHe — include only what changes).
+<action type="update_plan_item">{"dayIndex": 6, "id": "the-exact-id-from-DAY-PLANS", "startTime": "11:00", "durationMinutes": 120, "notes": "arrive early"}</action>
+
+<action type="delete_plan_item">{"dayIndex": 6, "id": "the-exact-id-from-DAY-PLANS", "name": "Ostrog Monastery"}</action>
+
+Use update_plan_item to CHANGE an existing plan item (time, duration, name, location, website, price, openingHours, notes) — send only the fields that change, plus dayIndex and the exact id. To move an item to another day add "newDayIndex".
+Use delete_plan_item to REMOVE an existing plan item.
+Both REQUIRE the exact "id" from the DAY PLANS list above — never invent one; if the item is not listed there, say so instead of guessing.
+
 Use add_plan_item when the user wants something added to a day's PLAN/itinerary (an activity, meal, or drive at a time of day). kind is "activity", "meal", or "drive" (drives also take "from","to","distanceKm").
 
 ACTION TAG RULES (CRITICAL):

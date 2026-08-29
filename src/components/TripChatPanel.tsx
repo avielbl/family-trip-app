@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, X, MessageCircle, Check, XCircle, HelpCircle, Trash2 } from 'lucide-react';
+import { Send, X, MessageCircle, Check, XCircle, HelpCircle, Trash2, Bug } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { callAI, buildChatSystemPrompt, aiErrorMessage } from '../firebase/aiService';
 import { saveHighlight, saveRestaurant, saveDrivingSegment, deleteHighlight, deleteRestaurant, deleteDrivingSegment, saveTripDay } from '../firebase/tripService';
@@ -22,6 +22,8 @@ const ALLOWED_ACTION_TYPES = [
   'delete_driving_route',
   'update_trip_day',
   'add_plan_item',
+  'update_plan_item',
+  'delete_plan_item',
 ] as const;
 
 type ChatActionType = (typeof ALLOWED_ACTION_TYPES)[number];
@@ -52,6 +54,8 @@ const ACTION_LABELS: Record<ChatActionType, { en: string; he: string }> = {
   delete_driving_route:  { en: 'Delete Driving Route', he: 'מחיקת מסלול נסיעה' },
   update_trip_day:       { en: 'Update Day',           he: 'עדכון יום' },
   add_plan_item:         { en: 'Add to Day Plan',      he: 'הוספה לתוכנית היום' },
+  update_plan_item:      { en: 'Edit Plan Item',       he: 'עריכת פריט בתוכנית' },
+  delete_plan_item:      { en: 'Remove Plan Item',     he: 'הסרת פריט מהתוכנית' },
 };
 
 /** Max characters a user message can be (prevents prompt injection via very long input). */
@@ -200,6 +204,18 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
   // Conversation history persists per trip so closing the panel (or the app)
   // doesn't lose the thread. Capped to the most recent exchanges.
   const historyKey = tripCode ? `chatHistory:${tripCode}` : null;
+  // Rolling diagnostics: raw AI replies + parsed/executed action outcomes.
+  // Chat data never leaves the device, so this is the record to share when an
+  // action misbehaves.
+  const logDiag = (entry: Record<string, unknown>) => {
+    try {
+      const key = 'chatDiagnostics';
+      const prev = JSON.parse(localStorage.getItem(key) ?? '[]');
+      const next = [...(Array.isArray(prev) ? prev : []), { ts: new Date().toISOString(), ...entry }].slice(-15);
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch { /* best-effort */ }
+  };
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (!historyKey) return [];
     try {
@@ -319,6 +335,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
       };
       const raw = await callAI(fullPrompt, undefined, chatOpts);
       console.debug('[TripChat] raw AI reply:', raw, { truncated });
+      logDiag({ kind: 'reply', ask: userText.slice(0, 200), truncated, raw: raw.slice(0, 1500) });
       let parsed = parseActions(raw);
 
       // The reply hit the output limit before finishing its action tag: ask
@@ -401,6 +418,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
   }
 
   function failAction(msgId: string, actionId: string, error: string) {
+    logDiag({ kind: 'action-failed', actionId, error });
     setMessages((prev) =>
       prev.map((m) =>
         m.id === msgId
@@ -577,6 +595,90 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
           plan: { ...(day.plan ?? {}), items: [...(day.plan?.items ?? []), item] },
         });
 
+      } else if (action.type === 'update_plan_item' || action.type === 'delete_plan_item') {
+        const dayIndex = resolveDayIndex(action.data.dayIndex);
+        if (dayIndex === null) {
+          failAction(msgId, actionId, isRTL
+            ? `יום לא תקין (${String(action.data.dayIndex)}) — לטיול יש ${totalDays} ימים`
+            : `Invalid day (${String(action.data.dayIndex)}) — the trip has ${totalDays} days`);
+          return;
+        }
+        const day = days.find((d) => d.dayIndex === dayIndex);
+        const items = day?.plan?.items ?? [];
+        const wantedId = sanitizeString(action.data.id);
+        const wantedName = sanitizeString(action.data.name).toLowerCase();
+        const target =
+          items.find((i) => i.id === wantedId) ??
+          (wantedName ? items.find((i) => (i.name ?? '').toLowerCase() === wantedName) : undefined);
+        if (!day || !target) {
+          failAction(msgId, actionId, isRTL
+            ? `הפריט לא נמצא בתוכנית של יום ${dayIndex + 1}`
+            : `Item not found in day ${dayIndex + 1}'s plan`);
+          return;
+        }
+
+        if (action.type === 'delete_plan_item') {
+          await saveTripDay(tripCode, {
+            ...day,
+            plan: { ...(day.plan ?? {}), items: items.filter((i) => i.id !== target.id) },
+          });
+        } else {
+          const d = action.data;
+          const str = (v: unknown) => (typeof v === 'string' && v ? sanitizeString(v) : undefined);
+          const num = (v: unknown) => (v == null ? undefined : sanitizeNumber(v, 0) || undefined);
+          const updated: import('../types/trip').PlanItem = {
+            ...target,
+            name: str(d.name) ?? target.name,
+            nameHe: str(d.nameHe) ?? target.nameHe,
+            startTime: str(d.startTime) ?? target.startTime,
+            durationMinutes: num(d.durationMinutes) ?? target.durationMinutes,
+            location: str(d.location) ?? target.location,
+            website: str(d.website) ?? target.website,
+            price: str(d.price) ?? target.price,
+            openingHours: str(d.openingHours) ?? target.openingHours,
+            notes: str(d.notes) ?? target.notes,
+            notesHe: str(d.notesHe) ?? target.notesHe,
+            from: str(d.from) ?? target.from,
+            to: str(d.to) ?? target.to,
+            distanceKm: num(d.distanceKm) ?? target.distanceKm,
+          };
+          // Optional move to another day.
+          const moveTo = d.newDayIndex != null ? resolveDayIndex(d.newDayIndex) : null;
+          if (moveTo !== null && moveTo !== dayIndex) {
+            await saveTripDay(tripCode, {
+              ...day,
+              plan: { ...(day.plan ?? {}), items: items.filter((i) => i.id !== target.id) },
+            });
+            const destDay = days.find((x) => x.dayIndex === moveTo) ?? {
+              dayIndex: moveTo,
+              date: '',
+              title: `Day ${moveTo + 1}`,
+              titleHe: `יום ${moveTo + 1}`,
+              location: '',
+              flights: [],
+              hotels: [],
+              driving: [],
+              highlights: [],
+              restaurants: [],
+            };
+            await saveTripDay(tripCode, {
+              ...destDay,
+              plan: {
+                ...(destDay.plan ?? {}),
+                items: [...(destDay.plan?.items ?? []), updated],
+              },
+            });
+          } else {
+            await saveTripDay(tripCode, {
+              ...day,
+              plan: {
+                ...(day.plan ?? {}),
+                items: items.map((i) => (i.id === target.id ? updated : i)),
+              },
+            });
+          }
+        }
+
       } else if (action.type === 'add_weather_location') {
         const city = sanitizeString(action.data.city);
         if (!city) return;
@@ -590,6 +692,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
         }
       }
 
+      logDiag({ kind: 'action-accepted', type: action.type, data: action.data });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msgId
@@ -627,7 +730,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
 
 🪄 לבקש שינויים (למנהל הטיול):
 כל שינוי מוצג ככרטיס אישור — שום דבר לא קורה בלי אישורכם:
-• הוספת פעילות/ארוחה/נסיעה לתוכנית של יום ("הוסיפו את מנזר אוסטרוג לתוכנית של יום 7")
+• הוספת פעילות/ארוחה/נסיעה לתוכנית של יום ("הוסיפו את מנזר אוסטרוג לתוכנית של יום 7")\n• עריכת פריט קיים בתוכנית ("תעבירו את הביקור במנזר ל-11:00") או הסרתו
 • הוספת אטרקציה, מסעדה או מסלול נסיעה לרשימות
 • מחיקת אטרקציה/מסעדה/מסלול
 • עדכון כותרת או מיקום של יום
@@ -648,7 +751,7 @@ E.g.: "What's planned for day 3?", "How long is the drive from Kotor to Budva?",
 
 🪄 Request changes (trip admin):
 Every change appears as an approval card — nothing happens without your approval:
-• Add an activity/meal/drive to a day's plan ("Add Ostrog Monastery to day 7's plan")
+• Add an activity/meal/drive to a day's plan ("Add Ostrog Monastery to day 7's plan")\n• Edit an existing plan item ("move the monastery visit to 11:00") or remove it
 • Add an attraction, restaurant, or driving route to the lists
 • Delete an attraction/restaurant/route
 • Update a day's title or location
@@ -684,6 +787,22 @@ Write observations on the Notes page ("the restaurant is closed on Mondays") —
           <div style={{ display: 'flex', gap: 4 }}>
             <button className="chat-close-btn" onClick={showHelp} title={isRTL ? 'עזרה' : 'Help'}>
               <HelpCircle size={18} />
+            </button>
+            <button
+              className="chat-close-btn"
+              title={isRTL ? 'העתק יומן אבחון' : 'Copy diagnostics'}
+              onClick={async () => {
+                const log = localStorage.getItem('chatDiagnostics') ?? '[]';
+                const payload = `TripIt v${__APP_VERSION__} diagnostics\n${log}`;
+                try {
+                  await navigator.clipboard.writeText(payload);
+                  window.alert(isRTL ? 'יומן האבחון הועתק' : 'Diagnostics copied');
+                } catch {
+                  window.prompt(isRTL ? 'העתיקו ידנית:' : 'Copy manually:', payload.slice(0, 2000));
+                }
+              }}
+            >
+              <Bug size={18} />
             </button>
             <button
               className="chat-close-btn"
