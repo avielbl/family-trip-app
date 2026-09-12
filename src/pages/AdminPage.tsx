@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useFamilyContext } from '../context/FamilyContext';
@@ -369,6 +369,23 @@ Return ONLY valid JSON, no markdown.`;
         <button className="admin-btn primary" onClick={() => navigate('/import')}>
           <FileUp size={14} />
           {isHe ? 'לייבוא הזמנות' : 'Open Import'}
+        </button>
+      </div>
+
+      {/* Export / import the whole plan as a file, for editing outside the app */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <FileDown size={16} />
+          {isHe ? 'ייצוא וייבוא תוכנית' : 'Export & Import Plan'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          {isHe
+            ? 'הורדת התוכנית כקובץ JSON או אקסל, עריכה מחוץ לאפליקציה והחזרתה — עם אישור לפני כל שינוי'
+            : 'Download the plan as JSON or Excel, edit it outside the app and bring it back — with a confirmation before anything changes'}
+        </p>
+        <button className="admin-btn primary" onClick={() => navigate('/trip-data')}>
+          <FileDown size={14} />
+          {isHe ? 'ייצוא / ייבוא' : 'Export / Import'}
         </button>
       </div>
 

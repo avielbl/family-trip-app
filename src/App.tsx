@@ -24,6 +24,7 @@ import ItineraryPage from './pages/ItineraryPage';
 import TripsPage from './pages/TripsPage';
 import ImportPage from './pages/ImportPage';
 import NotesPage from './pages/NotesPage';
+import TripDataPage from './pages/TripDataPage';
 import './i18n';
 
 function AppRoutes() {
@@ -80,6 +81,7 @@ function AppRoutes() {
         <Route path="/trips" element={<TripsPage />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/notes" element={<NotesPage />} />
+        <Route path="/trip-data" element={<TripDataPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
       <Route path="/trips/new" element={<SetupPage />} />
