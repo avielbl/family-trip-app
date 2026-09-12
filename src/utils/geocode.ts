@@ -2,6 +2,10 @@
 // Resolution order: trip-agnostic seed table (instant) → localStorage cache →
 // free Open-Meteo geocoding API (cached). Used by the map, weather, and
 // driving-route estimation so every feature follows the active trip.
+//
+// Route estimation asks a real road router (OSRM) for the driving distance and
+// falls back to a geometric estimate only when routing is unavailable. Nothing
+// here ever invents a distance: an unresolvable route returns null.
 
 export interface Coords {
   lat: number;
@@ -32,6 +36,18 @@ const SEED_CITY_COORDS: Record<string, Coords> = {
   kalambaka: { lat: 39.705, lng: 21.6289 },
 };
 
+// IATA codes resolve to the airport itself, not the city centre. Only consulted
+// as a fallback when the airport's written name can't be geocoded — extend as
+// new trips add airports.
+const AIRPORT_COORDS: Record<string, Coords> = {
+  tiv: { lat: 42.4047, lng: 18.7233 }, // Tivat, Montenegro
+  tgd: { lat: 42.3594, lng: 19.2519 }, // Podgorica, Montenegro
+  dbv: { lat: 42.5614, lng: 18.2682 }, // Dubrovnik, Croatia
+  tlv: { lat: 32.0114, lng: 34.8867 }, // Ben Gurion, Israel
+  skg: { lat: 40.5197, lng: 22.9709 }, // Thessaloniki, Greece
+  ath: { lat: 37.9364, lng: 23.9445 }, // Athens, Greece
+};
+
 const GEOCODE_CACHE_KEY = 'geocodeCache.v1';
 
 function readCache(): Record<string, Coords | null> {
@@ -50,18 +66,98 @@ function writeCache(cache: Record<string, Coords | null>): void {
   }
 }
 
-/** Synchronous best-effort lookup: seed table (partial match) or cache hit. */
+/** True when `needle` appears in `haystack` as a whole word, not mid-word. */
+function containsWord(haystack: string, needle: string): boolean {
+  let from = 0;
+  for (;;) {
+    const i = haystack.indexOf(needle, from);
+    if (i < 0) return false;
+    const before = i === 0 ? '' : haystack[i - 1];
+    const after = haystack[i + needle.length] ?? '';
+    if (!/[a-z]/.test(before) && !/[a-z]/.test(after)) return true;
+    from = i + 1;
+  }
+}
+
+/**
+ * Synchronous best-effort lookup: seed table (whole-word match) or cache hit.
+ * Matching is whole-word in both directions so a short name can't latch onto an
+ * unrelated city ("por" must not resolve to "Pozar").
+ */
 export function cachedCoords(place: string): Coords | null {
   const key = place.toLowerCase().trim();
   if (!key) return null;
   for (const [name, coords] of Object.entries(SEED_CITY_COORDS)) {
-    if (key.includes(name) || name.includes(key)) return coords;
+    if (containsWord(key, name) || containsWord(name, key)) return coords;
   }
   const cached = readCache()[key];
   return cached ?? null;
 }
 
-/** Resolve a place name to coordinates, hitting the network at most once per name. */
+/** Coordinates for a bare IATA airport code, if we know that airport. */
+export function airportCoords(code: string): Coords | null {
+  return AIRPORT_COORDS[code.toLowerCase().trim()] ?? null;
+}
+
+const AIRPORT_WORDS =
+  /\b(international|intl\.?|regional|municipal|national|airport|airfield|aerodrome|terminal)\b/gi;
+
+/**
+ * Search strings to try for a place, best first. The geocoding API indexes
+ * populated places, so "Tivat Airport (TIV)" only resolves once it is reduced
+ * to "Tivat", and "Hotel Splendid, Budva" only once reduced to "Budva".
+ */
+export function placeSearchVariants(place: string): string[] {
+  const variants: string[] = [];
+  const push = (value: string) => {
+    const clean = value.replace(/\s{2,}/g, ' ').replace(/^[\s,]+|[\s,]+$/g, '');
+    if (clean && !variants.some((v) => v.toLowerCase() === clean.toLowerCase())) {
+      variants.push(clean);
+    }
+  };
+
+  const raw = place.trim();
+  push(raw);
+  const noParens = raw.replace(/\([^)]*\)/g, ' ');
+  push(noParens);
+  const noAirportWords = noParens.replace(AIRPORT_WORDS, ' ');
+  push(noAirportWords);
+  // Drop a bare IATA code appended to the name ("Tivat Airport TIV" → "Tivat"),
+  // which no gazetteer of populated places will match.
+  push(noAirportWords.replace(/\b[A-Z]{3}\b/g, ' '));
+
+  // "Hotel Splendid, Bečići, Budva" — the last comma-separated part is the
+  // broadest (and most geocodable) location; the first is the most specific.
+  const parts = noParens.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    push(parts[parts.length - 1]);
+    push(parts[parts.length - 1].replace(AIRPORT_WORDS, ' '));
+    push(parts[0]);
+  }
+  return variants;
+}
+
+/** Single geocoding API call. Returns null on miss, error, or offline. */
+async function fetchCoords(name: string): Promise<Coords | null> {
+  try {
+    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+    url.searchParams.set('name', name);
+    url.searchParams.set('count', '1');
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    const hit = data.results?.[0];
+    return hit ? { lat: hit.latitude as number, lng: hit.longitude as number } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a place name to coordinates, hitting the network at most once per
+ * name. Progressively simpler variants of the name are tried before giving up,
+ * so airport and hotel strings resolve instead of silently missing.
+ */
 export async function geocode(place: string): Promise<Coords | null> {
   const key = place.toLowerCase().trim();
   if (!key) return null;
@@ -69,23 +165,24 @@ export async function geocode(place: string): Promise<Coords | null> {
   if (instant) return instant;
   const cache = readCache();
   if (key in cache) return cache[key]; // includes cached "not found" (null)
-  try {
-    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-    url.searchParams.set('name', place);
-    url.searchParams.set('count', '1');
-    const res = await fetch(url.toString());
-    if (!res.ok) return null;
-    const data = await res.json();
-    const hit = data.results?.[0];
-    const coords: Coords | null = hit
-      ? { lat: hit.latitude as number, lng: hit.longitude as number }
-      : null;
-    cache[key] = coords;
-    writeCache(cache);
-    return coords;
-  } catch {
-    return null;
+
+  let coords: Coords | null = null;
+  for (const variant of placeSearchVariants(place)) {
+    coords = cachedCoords(variant) ?? (await fetchCoords(variant));
+    if (coords) break;
   }
+  // Last resort: a bare IATA code ("TIV") that no gazetteer will match.
+  if (!coords) {
+    for (const token of key.split(/[^a-z]+/)) {
+      if (token.length === 3 && AIRPORT_COORDS[token]) {
+        coords = AIRPORT_COORDS[token];
+        break;
+      }
+    }
+  }
+  cache[key] = coords;
+  writeCache(cache);
+  return coords;
 }
 
 /** Resolve many names concurrently; returns a name → coords map (misses = null). */
@@ -111,18 +208,96 @@ export function haversineKm(a: Coords, b: Coords): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+export interface RouteEstimate {
+  distanceKm: number;
+  durationMinutes: number;
+  /** 'road' came from a real router; 'geometric' is a straight-line estimate. */
+  source: 'road' | 'geometric';
+}
+
 /**
- * Distance/duration estimate between two place names via geocoding:
- * straight-line distance × 1.35 road factor, driven at ~65 km/h + 15 min.
- * Returns null when either place can't be resolved.
+ * A route endpoint: known coordinates win, otherwise the name is geocoded.
+ * Hotels and flights usually carry better data than their display string.
+ */
+export interface PlaceRef {
+  name: string;
+  coords?: Coords | null;
+}
+
+function validCoords(c: Coords | null | undefined): c is Coords {
+  return (
+    !!c &&
+    Number.isFinite(c.lat) &&
+    Number.isFinite(c.lng) &&
+    Math.abs(c.lat) <= 90 &&
+    Math.abs(c.lng) <= 180 &&
+    !(c.lat === 0 && c.lng === 0)
+  );
+}
+
+/** Resolve an endpoint to coordinates, preferring coordinates already on hand. */
+export async function resolvePlace(place: PlaceRef | string): Promise<Coords | null> {
+  if (typeof place === 'string') return geocode(place);
+  if (validCoords(place.coords)) return place.coords;
+  return place.name ? geocode(place.name) : null;
+}
+
+/**
+ * Actual driving distance/duration from the public OSRM router.
+ * Returns null when the router is unreachable or has no route (e.g. a ferry
+ * hop or an island with no road link).
+ */
+export async function roadRoute(a: Coords, b: Coords): Promise<RouteEstimate | null> {
+  try {
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${a.lng},${a.lat};${b.lng},${b.lat}?overview=false&alternatives=false`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const route = data?.routes?.[0];
+    if (typeof route?.distance !== 'number' || typeof route?.duration !== 'number') {
+      return null;
+    }
+    return {
+      distanceKm: Math.max(1, Math.round(route.distance / 1000)),
+      durationMinutes: Math.max(5, Math.round(route.duration / 60)),
+      source: 'road',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Straight-line fallback. The detour factor and average speed both scale with
+ * distance: short transfers are mostly slow town roads, long hauls are mostly
+ * highway, so a single factor/speed pair misestimates one end or the other.
+ */
+export function geometricRoute(a: Coords, b: Coords): RouteEstimate {
+  const straight = haversineKm(a, b);
+  const detour = straight < 10 ? 1.4 : straight < 50 ? 1.3 : 1.25;
+  const distanceKm = Math.max(1, Math.round(straight * detour));
+  const speed = distanceKm < 10 ? 35 : distanceKm < 50 ? 55 : distanceKm < 150 ? 70 : 80;
+  const buffer = distanceKm < 25 ? 5 : 10;
+  return {
+    distanceKm,
+    durationMinutes: Math.max(5, Math.round((distanceKm / speed) * 60) + buffer),
+    source: 'geometric',
+  };
+}
+
+/**
+ * Distance/duration between two places: real road routing when both endpoints
+ * resolve, geometric estimate when the router is unavailable.
+ * Returns null when either endpoint can't be located — callers must leave the
+ * distance blank rather than substitute a made-up number.
  */
 export async function estimateRouteByGeo(
-  from: string,
-  to: string
-): Promise<{ distanceKm: number; durationMinutes: number } | null> {
-  const [a, b] = await Promise.all([geocode(from), geocode(to)]);
+  from: PlaceRef | string,
+  to: PlaceRef | string
+): Promise<RouteEstimate | null> {
+  const [a, b] = await Promise.all([resolvePlace(from), resolvePlace(to)]);
   if (!a || !b) return null;
-  const distanceKm = Math.round(haversineKm(a, b) * 1.35);
-  const durationMinutes = Math.round((distanceKm / 65) * 60) + 15;
-  return { distanceKm, durationMinutes };
+  return (await roadRoute(a, b)) ?? geometricRoute(a, b);
 }
