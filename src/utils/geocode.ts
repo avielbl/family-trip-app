@@ -216,8 +216,13 @@ export async function geocode(place: string): Promise<Coords | null> {
       }
     }
   }
-  cache[cacheKey] = coords;
-  writeCache(cache);
+  // Only remember answers decided with the trip's location in hand. Caching a
+  // guess made before the trip is known would pin the wrong place for the
+  // whole session, since a later lookup would just hit the cache.
+  if (geocodeAnchor) {
+    cache[cacheKey] = coords;
+    writeCache(cache);
+  }
   return coords;
 }
 

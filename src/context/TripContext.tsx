@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import type {
   TripConfig,
   TripDay,
@@ -389,7 +389,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   // resolve nearby instead of to a same-named town on another continent.
   // Hotel coordinates are the most trustworthy signal the trip carries —
   // config.countryCode defaults to 'GR' for migrated trips and cannot be.
-  useEffect(() => {
+  //
+  // A layout effect, not a passive one: React runs child passive effects
+  // before the parent's, so a page that geocodes on mount would otherwise run
+  // before the anchor was set and resolve names with no idea where the trip is.
+  useLayoutEffect(() => {
     const located = hotels.filter(
       (h) => typeof h.lat === 'number' && typeof h.lng === 'number'
     );

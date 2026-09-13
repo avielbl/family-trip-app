@@ -6,7 +6,7 @@ import { useTripContext } from '../context/TripContext';
 import type { Hotel, Highlight, Restaurant, PlanItem } from '../types/trip';
 import { cachedCoords, geocodeMany } from '../utils/geocode';
 import { dayPartLabel, formatDuration, itemDayPart } from '../utils/dayParts';
-import { collectDriveLegs } from '../utils/driveLegs';
+import { collectDriveLegsDetailed, tripRegionFrom } from '../utils/driveLegs';
 import { localized } from '../utils/localize';
 
 // ─── Place coordinate resolution ─────────────────────────────────────────────
@@ -242,10 +242,19 @@ export default function TripMapPage() {
     [days, geo]
   );
 
-  // Every drive worth drawing — segments and approved plan drives, deduped.
-  const drivePoints = useMemo(
-    () => collectDriveLegs(driving, days, (name) => resolvePlace(geo, name)),
-    [driving, days, geo]
+  // The area this trip occupies, used to reject drive endpoints that landed
+  // outside it — a geocoder matching a same-named town in the next country.
+  const tripRegion = useMemo(
+    () => tripRegionFrom(hotelPoints.map((pt) => ({ lat: pt.lat, lng: pt.lng }))),
+    [hotelPoints]
+  );
+
+  // Every drive worth drawing — segments and approved plan drives, deduped —
+  // plus the ones that could not be placed, so they can be named rather than
+  // just going missing.
+  const { legs: drivePoints, unplaceable: unplaceableDrives } = useMemo(
+    () => collectDriveLegsDetailed(driving, days, (name) => resolvePlace(geo, name), tripRegion),
+    [driving, days, geo, tripRegion]
   );
 
   // Focus request from the itinerary ("show on map").
@@ -678,6 +687,28 @@ export default function TripMapPage() {
           </button>
         </div>
       </div>
+
+      {show.drives && unplaceableDrives.length > 0 && (
+        <div className="map-unplaceable">
+          <strong>
+            {isRTL
+              ? `${unplaceableDrives.length} נסיעות לא מוצגות`
+              : `${unplaceableDrives.length} drive${unplaceableDrives.length > 1 ? 's' : ''} not shown`}
+          </strong>
+          <span>
+            {isRTL
+              ? 'לא הצלחנו למקם את הקצוות שלהן. הוסיפו עיר או מדינה לשם המקום כדי לתקן.'
+              : 'Their endpoints could not be placed. Add a town or country to the place name to fix it.'}
+          </span>
+          <ul>
+            {unplaceableDrives.slice(0, 6).map((d) => (
+              <li key={`${d.from}|${d.to}`}>
+                {d.from} → {d.to}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* ─── Legend ─────────────────────────────────────────────── */}
       <div className="map-legend">
