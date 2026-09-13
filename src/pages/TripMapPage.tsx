@@ -1,11 +1,12 @@
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { MapPin, Building2, Star, Layers, UtensilsCrossed } from 'lucide-react';
+import { MapPin, Building2, Star, Layers, UtensilsCrossed, Maximize2, Minimize2, X } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import type { Hotel, Highlight, Restaurant, PlanItem } from '../types/trip';
 import { cachedCoords, geocodeMany } from '../utils/geocode';
-import { dayPartLabel, itemDayPart } from '../utils/dayParts';
+import { dayPartLabel, formatDuration, itemDayPart } from '../utils/dayParts';
+import { collectDriveLegs } from '../utils/driveLegs';
 
 // ─── Place coordinate resolution ─────────────────────────────────────────────
 // Names are resolved asynchronously via the shared geocoder (seed table →
@@ -32,6 +33,9 @@ function getRestaurantCoords(geo: Geo, r: Restaurant): { lat: number; lng: numbe
   if (r.lat && r.lng) return { lat: r.lat, lng: r.lng };
   return resolvePlace(geo, r.city) ?? resolvePlace(geo, r.address);
 }
+
+/** Day-to-day drives, kept distinct from the blue hotel-to-hotel backbone. */
+const DRIVE_COLOR = '#ea580c';
 
 // ─── Category icon colors ─────────────────────────────────────────────────────
 
@@ -61,6 +65,26 @@ async function fetchOSRMRoute(
   const geometry: [number, number][] = data.routes[0].geometry.coordinates;
   // OSRM returns [lng, lat] — flip to [lat, lng] for Leaflet
   return geometry.map(([lng, lat]) => [lat, lng]);
+}
+
+/**
+ * Run async work a few items at a time. Each drive is its own routing request
+ * and OSRM's public server is a shared courtesy, so a dozen legs should not all
+ * leave at once.
+ */
+async function mapLimited<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<void> {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
 }
 
 // ─── Tile layers ──────────────────────────────────────────────────────────────
@@ -96,7 +120,7 @@ const LEGEND_ITEMS = [
 export default function TripMapPage() {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
-  const { hotels, highlights, restaurants, flights, config, days } = useTripContext();
+  const { hotels, highlights, restaurants, flights, config, days, driving } = useTripContext();
   const [searchParams] = useSearchParams();
   // Layer filters — highlight what you need, hide the rest.
   const [show, setShow] = useState({
@@ -105,6 +129,7 @@ export default function TripMapPage() {
     restaurants: true,
     plan: true,
     route: true,
+    drives: true,
   });
   const [geo, setGeo] = useState<Geo>({});
 
@@ -117,6 +142,13 @@ export default function TripMapPage() {
       ...highlights.flatMap((hl) => (hl.lat && hl.lng ? [] : [hl.address, hl.name])),
       ...restaurants.flatMap((r) => (r.lat && r.lng ? [] : [r.city, r.address])),
       ...flights.flatMap((f) => [f.arrivalAirport, f.departureAirport]),
+      // Both ends of every drive, so each leg can be drawn as a real route.
+      ...driving.flatMap((d) => [d.from, d.to]),
+      ...days.flatMap((d) =>
+        (d.plan?.items ?? [])
+          .filter((i) => i.kind === 'drive')
+          .flatMap((i) => [i.from, i.to])
+      ),
       ...days.flatMap((d) => [
         d.location,
         ...(d.plan?.items ?? [])
@@ -132,7 +164,7 @@ export default function TripMapPage() {
     return () => {
       cancelled = true;
     };
-  }, [hotels, highlights, restaurants, flights, config, days, searchParams]);
+  }, [hotels, highlights, restaurants, flights, config, days, driving, searchParams]);
 
   // Airport marker/route endpoints from the trip's flights (if resolvable).
   const sortedFlights = useMemo(
@@ -145,6 +177,7 @@ export default function TripMapPage() {
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const tileLayerRef = useRef<import('leaflet').TileLayer | null>(null);
   const [tileMode, setTileMode] = useState<'streets' | 'satellite'>('streets');
+  const [fullscreen, setFullscreen] = useState(false);
 
   // Sorted hotels by check-in date (defines the route)
   const sortedHotels = useMemo(
@@ -206,6 +239,12 @@ export default function TripMapPage() {
         })
         .filter(Boolean) as { item: PlanItem; dayIndex: number; lat: number; lng: number }[],
     [days, geo]
+  );
+
+  // Every drive worth drawing — segments and approved plan drives, deduped.
+  const drivePoints = useMemo(
+    () => collectDriveLegs(driving, days, (name) => resolvePlace(geo, name)),
+    [driving, days, geo]
   );
 
   // Focus request from the itinerary ("show on map").
@@ -340,17 +379,67 @@ export default function TripMapPage() {
 
         fetchOSRMRoute(routeWaypoints)
           .then((latLngs) => {
-            if (!mapRef.current) return;
+            if (mapRef.current !== map) return; // superseded by a rebuild
             fallbackLine.remove();
             L.polyline(latLngs, {
               color: '#1d4ed8',
               weight: 3,
               opacity: 0.8,
-            }).addTo(mapRef.current);
+            }).addTo(map);
           })
           .catch(() => {
             // Keep fallback dashed line if OSRM fails
           });
+      }
+
+      // ── Individual drive legs (each its own real-road route) ──────
+      // The backbone above is the trip's arc between hotels; these are the
+      // day-to-day drives — to a viewpoint, a monastery, a beach — which is
+      // where most of the actual driving happens.
+      if (show.drives && drivePoints.length > 0) {
+        const pending: Array<{ leg: (typeof drivePoints)[number]; line: import('leaflet').Polyline }> = [];
+
+        for (const leg of drivePoints) {
+          const distance = leg.distanceKm ? `${leg.distanceKm} km` : '';
+          const duration = leg.durationMinutes ? formatDuration(leg.durationMinutes, isRTL) : '';
+          const meta = [distance, duration].filter(Boolean).join(' · ');
+          const popup =
+            `<div style="font-family:Inter,sans-serif;min-width:180px">` +
+            `<div style="font-weight:600;margin-bottom:2px">🚗 ${leg.from} → ${leg.to}</div>` +
+            `<div style="font-size:12px;color:#6b7280">` +
+            `${isRTL ? 'יום' : 'Day'} ${leg.dayIndex + 1}${meta ? ` · ${meta}` : ''}</div>` +
+            `</div>`;
+
+          // Straight dashed line first so the leg is visible immediately, then
+          // swapped for the road geometry once OSRM answers.
+          const line = L.polyline(
+            [[leg.a.lat, leg.a.lng], [leg.b.lat, leg.b.lng]],
+            { color: DRIVE_COLOR, weight: 2, opacity: 0.35, dashArray: '6, 6' }
+          ).addTo(map);
+          line.bindPopup(popup);
+          allLatLngs.push([leg.a.lat, leg.a.lng], [leg.b.lat, leg.b.lng]);
+          pending.push({ leg, line });
+        }
+
+        mapLimited(pending, 3, async ({ leg, line }) => {
+          try {
+            const latLngs = await fetchOSRMRoute([leg.a, leg.b]);
+            // This effect rebuilds the map from scratch on every change, so a
+            // response that lands after a rebuild belongs to a map that is
+            // gone. Drawing it would leave an orphan line nothing can clear.
+            if (mapRef.current !== map || !latLngs.length) return;
+            const popup = line.getPopup()?.getContent();
+            line.remove();
+            const road = L.polyline(latLngs, {
+              color: DRIVE_COLOR,
+              weight: 4,
+              opacity: 0.75,
+            }).addTo(map);
+            if (popup) road.bindPopup(popup as string);
+          } catch {
+            // Leave the dashed straight line — still shows the leg exists.
+          }
+        });
       }
 
       // ── Highlight markers (colored circles) ───────────────────────
@@ -475,7 +564,7 @@ export default function TripMapPage() {
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- defaultCenter/Zoom are derived from destCoords
-  }, [hotelPoints, highlightPoints, restaurantPoints, planPoints, show, airport, arrivalAirportName, destCoords?.lat, destCoords?.lng, focusCoords?.lat, focusCoords?.lng, focusLabel, isRTL]);
+  }, [hotelPoints, highlightPoints, restaurantPoints, planPoints, drivePoints, show, airport, arrivalAirportName, destCoords?.lat, destCoords?.lng, focusCoords?.lat, focusCoords?.lng, focusLabel, isRTL]);
 
   // Handle tile layer toggle without rebuilding the map
   useEffect(() => {
@@ -490,6 +579,28 @@ export default function TripMapPage() {
     });
   }, [tileMode]);
 
+  // Leaflet measures its container once; after the shell resizes it has to be
+  // told, or the map keeps the old size and tiles come out grey.
+  useEffect(() => {
+    const id = window.setTimeout(() => mapRef.current?.invalidateSize(), 220);
+    return () => window.clearTimeout(id);
+  }, [fullscreen]);
+
+  // While the map covers the screen, stop the page behind it from scrolling.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [fullscreen]);
+
   return (
     <div className="trip-map-page">
       <h1 className="page-title">
@@ -501,39 +612,66 @@ export default function TripMapPage() {
           : 'Full trip map with hotels, highlights, restaurants, and driving route'}
       </p>
 
-      {/* ─── Layer filters ──────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        {(
-          [
-            ['hotels', isRTL ? '🏨 מלונות' : '🏨 Hotels'],
-            ['highlights', isRTL ? '📍 אטרקציות' : '📍 Attractions'],
-            ['restaurants', isRTL ? '🍽️ מסעדות' : '🍽️ Restaurants'],
-            ['plan', isRTL ? '★ תוכנית מאושרת' : '★ Approved plan'],
-            ['route', isRTL ? '🚗 מסלול' : '🚗 Route'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            className={`filter-tab ${show[key] ? 'active' : ''}`}
-            onClick={() => setShow((prev) => ({ ...prev, [key]: !prev[key] }))}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* ─── Map shell: filters + canvas, so both go fullscreen together ── */}
+      <div className={`map-shell${fullscreen ? ' map-fullscreen' : ''}`}>
+        <div className="map-filter-bar">
+          {(
+            [
+              ['hotels', isRTL ? '🏨 מלונות' : '🏨 Hotels'],
+              ['highlights', isRTL ? '📍 אטרקציות' : '📍 Attractions'],
+              ['restaurants', isRTL ? '🍽️ מסעדות' : '🍽️ Restaurants'],
+              ['plan', isRTL ? '★ תוכנית מאושרת' : '★ Approved plan'],
+              ['route', isRTL ? '🛣️ קו הטיול' : '🛣️ Trip arc'],
+              ['drives', isRTL ? '🚗 נסיעות' : '🚗 Drives'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              className={`filter-tab ${show[key] ? 'active' : ''}`}
+              onClick={() => setShow((prev) => ({ ...prev, [key]: !prev[key] }))}
+            >
+              {label}
+            </button>
+          ))}
+          {fullscreen && (
+            <button
+              className="map-exit-fullscreen"
+              onClick={() => setFullscreen(false)}
+              title={isRTL ? 'יציאה ממסך מלא' : 'Exit full screen'}
+            >
+              <X size={16} />
+              {isRTL ? 'סגור' : 'Close'}
+            </button>
+          )}
+        </div>
 
-      {/* ─── Map Container ──────────────────────────────────────── */}
-      <div style={{ position: 'relative' }}>
-        <div className="map-container" ref={mapContainerRef} />
-        {/* Satellite toggle button */}
-        <button
-          className="map-layer-toggle"
-          onClick={() => setTileMode((m) => m === 'streets' ? 'satellite' : 'streets')}
-          title={tileMode === 'streets' ? 'Switch to satellite' : 'Switch to streets'}
-        >
-          <Layers size={16} />
-          <span>{tileMode === 'streets' ? (isRTL ? 'לוויין' : 'Satellite') : (isRTL ? 'רחובות' : 'Streets')}</span>
-        </button>
+        <div className="map-canvas">
+          <div className="map-container" ref={mapContainerRef} />
+          <button
+            className="map-layer-toggle"
+            onClick={() => setTileMode((m) => (m === 'streets' ? 'satellite' : 'streets'))}
+            title={tileMode === 'streets' ? 'Switch to satellite' : 'Switch to streets'}
+          >
+            <Layers size={16} />
+            <span>{tileMode === 'streets' ? (isRTL ? 'לוויין' : 'Satellite') : (isRTL ? 'רחובות' : 'Streets')}</span>
+          </button>
+          <button
+            className="map-fullscreen-toggle"
+            onClick={() => setFullscreen((v) => !v)}
+            title={
+              fullscreen
+                ? (isRTL ? 'יציאה ממסך מלא' : 'Exit full screen')
+                : (isRTL ? 'מסך מלא' : 'Full screen')
+            }
+            aria-label={
+              fullscreen
+                ? (isRTL ? 'יציאה ממסך מלא' : 'Exit full screen')
+                : (isRTL ? 'מסך מלא' : 'Full screen')
+            }
+          >
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        </div>
       </div>
 
       {/* ─── Legend ─────────────────────────────────────────────── */}
@@ -556,7 +694,11 @@ export default function TripMapPage() {
           </div>
           <div className="legend-item">
             <div style={{ width: 36, height: 4, background: '#1d4ed8', borderRadius: 2, opacity: 0.7, marginRight: 4 }} />
-            <span>{isRTL ? 'מסלול נסיעה' : 'Driving route'}</span>
+            <span>{isRTL ? 'קו הטיול (מלון למלון)' : 'Trip arc (hotel to hotel)'}</span>
+          </div>
+          <div className="legend-item">
+            <div style={{ width: 36, height: 4, background: '#ea580c', borderRadius: 2, opacity: 0.85, marginRight: 4 }} />
+            <span>{isRTL ? 'נסיעה יומית (לחצו לפרטים)' : 'Day drive (tap for details)'}</span>
           </div>
         </div>
       </div>
