@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Clock, Languages } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Languages } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useFamilyContext } from '../context/FamilyContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, migratePlansToDayParts, backfillHebrew } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, backfillHebrew } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
@@ -44,8 +44,6 @@ export default function AdminPage() {
   const [quizBusy, setQuizBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [quizError, setQuizError] = useState('');
-  const [dayPartsBusy, setDayPartsBusy] = useState(false);
-  const [dayPartsResult, setDayPartsResult] = useState('');
   const [translateBusy, setTranslateBusy] = useState(false);
   const [translateResult, setTranslateResult] = useState('');
   const [translateProgress, setTranslateProgress] = useState('');
@@ -235,33 +233,6 @@ Return ONLY valid JSON, no markdown.`;
       deviceType: 'phone',
     };
     setMembers([...members, newMember]);
-  }
-
-  // Plans used to carry clock times; they are now scheduled by part of day.
-  // Existing trips keep their old items until this converts them in place.
-  async function handleMigrateDayParts() {
-    if (!tripCode) return;
-    setDayPartsBusy(true);
-    setDayPartsResult('');
-    try {
-      const { daysChanged, itemsConverted, missingDuration } = await migratePlansToDayParts(tripCode, days);
-      const converted =
-        itemsConverted === 0
-          ? (isHe ? 'אין מה להמיר — התוכנית כבר לפי חלקי יום.' : 'Nothing to convert — the plan already uses parts of day.')
-          : (isHe
-              ? `הומרו ${itemsConverted} פריטים ב-${daysChanged} ימים.`
-              : `Converted ${itemsConverted} items across ${daysChanged} days.`);
-      const gap = missingDuration
-        ? (isHe
-            ? ` ל-${missingDuration} פריטים אין משך זמן — כדאי להשלים, זה הפרט המרכזי עכשיו.`
-            : ` ${missingDuration} items have no duration — worth filling in, that is the headline detail now.`)
-        : '';
-      setDayPartsResult(converted + gap);
-    } catch (err) {
-      setDayPartsResult((err as Error).message);
-    } finally {
-      setDayPartsBusy(false);
-    }
   }
 
   // Content typed in English — or produced by a generator that skipped the
@@ -464,29 +435,10 @@ Return ONLY valid JSON, no markdown.`;
         </button>
       </div>
 
-      {/* One-off conversion of plans that still carry clock times */}
-      <div className="admin-section">
-        <div className="admin-section-title">
-          <Clock size={16} />
-          {isHe ? 'המרת תוכנית לחלקי יום' : 'Convert plan to parts of day'}
-        </div>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-          {isHe
-            ? 'תוכניות נבנות עכשיו לפי בוקר/צהריים/אחה״צ/ערב במקום שעות מדויקות. ההמרה מעבירה פריטים ישנים לחלק היום המתאים ומשאירה את משכי הזמן כפי שהם. אפשר להריץ שוב בבטחה.'
-            : 'Plans are now organised by morning/noon/afternoon/evening instead of exact times. This moves older items to the matching part of day and leaves every duration untouched. Safe to run more than once.'}
-        </p>
-        <button className="admin-btn primary" onClick={handleMigrateDayParts} disabled={dayPartsBusy}>
-          {dayPartsBusy ? <Loader2 size={14} className="spin" /> : <Clock size={14} />}
-          {dayPartsBusy
-            ? (isHe ? 'ממיר...' : 'Converting...')
-            : (isHe ? 'המר עכשיו' : 'Convert now')}
-        </button>
-        {dayPartsResult && (
-          <p style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-secondary)' }}>{dayPartsResult}</p>
-        )}
-      </div>
-
-      {/* Fill in Hebrew for content that only exists in English */}
+      {/* Fill in Hebrew for content that only exists in English. New gaps appear
+          whenever content is added in English, so this is not a one-off — but
+          it stays out of the way until there is something to translate. */}
+      {(missingHebrewCount > 0 || translateResult) && (
       <div className="admin-section">
         <div className="admin-section-title">
           <Languages size={16} />
@@ -497,13 +449,13 @@ Return ONLY valid JSON, no markdown.`;
             ? 'תיאורים של אטרקציות, מסעדות, חותמות ופריטי תוכנית שנוספו באנגלית מוצגים באנגלית גם כשהשפה עברית. הפעולה משלימה את התרגום החסר בלבד — תרגום קיים לא נדרס.'
             : 'Attractions, restaurants, stamps and plan items added in English show in English even when the language is Hebrew. This fills in only what is missing — existing Hebrew is never overwritten.'}
         </p>
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-          {missingHebrewCount === 0
-            ? (isHe ? 'אין שדות חסרים.' : 'Nothing is missing Hebrew.')
-            : (isHe
-                ? `${missingHebrewCount} שדות ללא תרגום.`
-                : `${missingHebrewCount} fields have no Hebrew yet.`)}
-        </p>
+        {missingHebrewCount > 0 && (
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+            {isHe
+              ? `${missingHebrewCount} שדות ללא תרגום.`
+              : `${missingHebrewCount} fields have no Hebrew yet.`}
+          </p>
+        )}
         <button
           className="admin-btn primary"
           onClick={handleTranslate}
@@ -518,6 +470,7 @@ Return ONLY valid JSON, no markdown.`;
           <p style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-secondary)' }}>{translateResult}</p>
         )}
       </div>
+      )}
 
       {/* Invite Link */}
       <div className="admin-section">

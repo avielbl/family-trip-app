@@ -254,8 +254,9 @@ export interface PlanItem {
   nameHe?: string;
   dayPart?: DayPart;
   /**
-   * @deprecated Superseded by dayPart. Retained so plans saved before the
-   * switch still render and can be migrated (see migratePlanTimesToDayParts).
+   * @deprecated Superseded by dayPart. Retained because plans saved before the
+   * switch still carry it: itemDayPart() derives the part of day from it, so
+   * an unconverted plan still groups correctly, and editing an item drops it.
    */
   startTime?: string; // "09:00"
   /** How long to allow for this — the headline detail, shown on every item. */
