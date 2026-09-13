@@ -3872,3 +3872,24 @@ body {
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
+
+/* Drives the map could not place — named rather than silently missing. */
+.map-unplaceable {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-inline-start: 3px solid var(--amber-500);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.map-unplaceable ul {
+  margin: 2px 0 0;
+  padding-inline-start: 18px;
+  color: var(--text-muted);
+}
