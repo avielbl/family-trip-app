@@ -16,6 +16,7 @@ import type {
   TravelLogEntry,
   TripNote,
 } from '../types/trip';
+import { setGeocodeAnchor } from '../utils/geocode';
 import type { PassportStamp, EarnedStamp } from '../types/ai';
 import {
   subscribeTripDays,
@@ -383,6 +384,24 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     tripStart && tripStarted && !tripEnded
       ? Math.floor((now.getTime() - tripStart.getTime()) / msPerDay)
       : -1;
+
+  // Tell the geocoder roughly where this trip is, so ambiguous place names
+  // resolve nearby instead of to a same-named town on another continent.
+  // Hotel coordinates are the most trustworthy signal the trip carries —
+  // config.countryCode defaults to 'GR' for migrated trips and cannot be.
+  useEffect(() => {
+    const located = hotels.filter(
+      (h) => typeof h.lat === 'number' && typeof h.lng === 'number'
+    );
+    if (!located.length) {
+      setGeocodeAnchor(null);
+      return;
+    }
+    setGeocodeAnchor({
+      lat: located.reduce((sum, h) => sum + (h.lat as number), 0) / located.length,
+      lng: located.reduce((sum, h) => sum + (h.lng as number), 0) / located.length,
+    });
+  }, [hotels]);
 
   return (
     <TripContext.Provider

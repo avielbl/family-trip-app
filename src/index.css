@@ -871,27 +871,34 @@ body {
 .stamp-count {
   text-align: center;
   font-size: 15px;
-  color: var(--gray-600);
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 
+/* Tracks size themselves so the slots stay square and legible at any width,
+   rather than a fixed column count the book has to be wide enough for. */
 .stamp-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
   gap: 12px;
 }
 
 .stamp-slot {
   aspect-ratio: 1;
-  border: 2px dashed var(--gray-300);
+  /* Grid items default to min-width:auto, so a long hint inside one can push
+     its track wider than the container and spill the whole grid out. */
+  min-width: 0;
+  overflow: hidden;
+  border: 2px dashed var(--border-strong);
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   text-align: center;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.6);
+  padding: 8px 6px;
+  background: var(--bg-secondary);
 }
 
 .stamp-slot.stamp-earned {
@@ -907,18 +914,62 @@ body {
 }
 
 .stamp-emoji {
-  font-size: 32px;
+  font-size: 30px;
+  line-height: 1.1;
 }
 
+/* An unearned slot reads as empty through its dashed border and faded emoji,
+   so it does not need the whole card dimmed — that took the label with it. */
 .stamp-slot.stamp-pending {
-  opacity: 0.5;
+  opacity: 1;
 }
 
+.stamp-emoji.faded {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.stamp-day-label,
 .stamp-day {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--gray-600);
-  margin-top: 4px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.stamp-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.earn-text {
+  font-size: 9px;
+  line-height: 1.25;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.stamp-design {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+}
+
+.stamp-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.55;
 }
 
 /* Photos */
@@ -2348,7 +2399,7 @@ body {
   }
 
   .stamp-grid {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   }
 
   .member-grid {
