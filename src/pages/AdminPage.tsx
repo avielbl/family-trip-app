@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Clock } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Clock, Languages } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useFamilyContext } from '../context/FamilyContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, migratePlansToDayParts } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, migratePlansToDayParts, backfillHebrew } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
+import { collectMissingHebrew } from '../utils/translateContent';
 import { GREECE_QUIZ_SEED } from '../data/greeceQuizSeed';
 import type { FamilyMember, QuizQuestion } from '../types/trip';
 import type { AIConfig } from '../types/ai';
@@ -17,7 +18,7 @@ import type { AIConfig } from '../types/ai';
 export default function AdminPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { config, tripCode, isAdmin, quizQuestions, totalDays, days } = useTripContext();
+  const { config, tripCode, isAdmin, quizQuestions, totalDays, days, highlights, restaurants, passportStamps } = useTripContext();
   const { firebaseUser } = useAuthContext();
   const { family, familyId } = useFamilyContext();
   const isHe = i18n.language === 'he';
@@ -45,6 +46,9 @@ export default function AdminPage() {
   const [quizError, setQuizError] = useState('');
   const [dayPartsBusy, setDayPartsBusy] = useState(false);
   const [dayPartsResult, setDayPartsResult] = useState('');
+  const [translateBusy, setTranslateBusy] = useState(false);
+  const [translateResult, setTranslateResult] = useState('');
+  const [translateProgress, setTranslateProgress] = useState('');
 
   // Greece-only content seeds (legacy) — hidden on other destinations.
   const isGreeceTrip = ((config?.destination ?? '') + (config?.tripName ?? ''))
@@ -260,6 +264,48 @@ Return ONLY valid JSON, no markdown.`;
     }
   }
 
+  // Content typed in English — or produced by a generator that skipped the
+  // Hebrew — renders in English however the language is set. This fills in the
+  // missing Hebrew; anything already translated is left alone.
+  const translatableContent = { highlights, restaurants, passportStamps, days };
+  const missingHebrewCount = collectMissingHebrew(translatableContent).length;
+
+  async function handleTranslate() {
+    if (!tripCode) return;
+    if (!hasAiKey()) {
+      setTranslateResult(isHe ? 'נדרש מפתח AI (בהגדרות מעלה)' : 'An AI key is required (settings above)');
+      return;
+    }
+    setTranslateBusy(true);
+    setTranslateResult('');
+    setTranslateProgress('');
+    try {
+      const { translated, records, failedBatches } = await backfillHebrew(
+        tripCode,
+        translatableContent,
+        (prompt) => generateText(prompt, 8192),
+        (done, total) => setTranslateProgress(`${done} / ${total}`)
+      );
+      const base =
+        translated === 0
+          ? (isHe ? 'אין מה לתרגם — הכול כבר בעברית.' : 'Nothing to translate — everything already has Hebrew.')
+          : (isHe
+              ? `תורגמו ${translated} שדות ב-${records} רשומות.`
+              : `Translated ${translated} fields across ${records} records.`);
+      const failed = failedBatches
+        ? (isHe
+            ? ` ${failedBatches} קבוצות נכשלו ולא נכתבו — אפשר להריץ שוב.`
+            : ` ${failedBatches} batches failed and were skipped — run it again to retry them.`)
+        : '';
+      setTranslateResult(base + failed);
+    } catch (err) {
+      setTranslateResult((err as Error).message);
+    } finally {
+      setTranslateBusy(false);
+      setTranslateProgress('');
+    }
+  }
+
   function removeMember(idx: number) {
     setMembers(members.filter((_, i) => i !== idx));
   }
@@ -437,6 +483,39 @@ Return ONLY valid JSON, no markdown.`;
         </button>
         {dayPartsResult && (
           <p style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-secondary)' }}>{dayPartsResult}</p>
+        )}
+      </div>
+
+      {/* Fill in Hebrew for content that only exists in English */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <Languages size={16} />
+          {isHe ? 'השלמת תרגום לעברית' : 'Fill in Hebrew translations'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          {isHe
+            ? 'תיאורים של אטרקציות, מסעדות, חותמות ופריטי תוכנית שנוספו באנגלית מוצגים באנגלית גם כשהשפה עברית. הפעולה משלימה את התרגום החסר בלבד — תרגום קיים לא נדרס.'
+            : 'Attractions, restaurants, stamps and plan items added in English show in English even when the language is Hebrew. This fills in only what is missing — existing Hebrew is never overwritten.'}
+        </p>
+        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+          {missingHebrewCount === 0
+            ? (isHe ? 'אין שדות חסרים.' : 'Nothing is missing Hebrew.')
+            : (isHe
+                ? `${missingHebrewCount} שדות ללא תרגום.`
+                : `${missingHebrewCount} fields have no Hebrew yet.`)}
+        </p>
+        <button
+          className="admin-btn primary"
+          onClick={handleTranslate}
+          disabled={translateBusy || missingHebrewCount === 0}
+        >
+          {translateBusy ? <Loader2 size={14} className="spin" /> : <Languages size={14} />}
+          {translateBusy
+            ? (isHe ? `מתרגם... ${translateProgress}` : `Translating... ${translateProgress}`)
+            : (isHe ? 'תרגם עכשיו' : 'Translate now')}
+        </button>
+        {translateResult && (
+          <p style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-secondary)' }}>{translateResult}</p>
         )}
       </div>
 

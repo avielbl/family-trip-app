@@ -4,6 +4,7 @@ import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Mountain
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { geocode as geocodeCity } from '../utils/geocode';
+import { buildTripLocations, isStayDate, stayDayLabel, type Stay } from '../utils/tripStays';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ interface LocationForecast {
   lat: number;
   lng: number;
   days: DailyWeather[];
+  /** Dates actually spent here — empty for places added outside the itinerary. */
+  stays: Stay[];
   error?: string;
 }
 
@@ -135,7 +138,7 @@ async function fetchWeather(lat: number, lng: number): Promise<DailyWeather[]> {
 
 export default function WeatherPage() {
   const { t, i18n } = useTranslation();
-  const { hotels, config } = useTripContext();
+  const { hotels, config, totalDays } = useTripContext();
   const isRTL = i18n.language === 'he';
 
   const [forecasts, setForecasts] = useState<LocationForecast[]>([]);
@@ -161,22 +164,35 @@ export default function WeatherPage() {
   const destination = config?.destination;
   const wantedLocations = useMemo(() => {
     const seen = new Set<string>();
-    const wanted: Array<{ label: string; city: string; lat?: number; lng?: number }> = [];
-    for (const h of hotels) {
-      const label = h.city || h.name;
-      const key = label.toLowerCase().trim();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      wanted.push({ label, city: label, lat: h.lat, lng: h.lng });
+    const wanted: Array<{
+      label: string;
+      city: string;
+      lat?: number;
+      lng?: number;
+      stays: Stay[];
+    }> = [];
+
+    // Hotels first, in the order the trip reaches them, each carrying the
+    // dates spent there so the forecast can mark the days that matter.
+    for (const loc of buildTripLocations(hotels)) {
+      seen.add(loc.label.toLowerCase().trim());
+      wanted.push({
+        label: loc.label,
+        city: loc.label,
+        lat: loc.lat,
+        lng: loc.lng,
+        stays: loc.stays,
+      });
     }
+    // Then anything added by hand through chat — no itinerary dates to mark.
     for (const e of extraLocations) {
       const key = e.city.toLowerCase().trim();
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      wanted.push({ label: e.city, city: e.city, lat: e.lat, lng: e.lng });
+      wanted.push({ label: e.city, city: e.city, lat: e.lat, lng: e.lng, stays: [] });
     }
     if (wanted.length === 0 && destination) {
-      wanted.push({ label: destination, city: destination });
+      wanted.push({ label: destination, city: destination, stays: [] });
     }
     return wanted;
   }, [hotels, extraLocations, destination]);
@@ -195,10 +211,15 @@ export default function WeatherPage() {
                 ? { lat: loc.lat, lng: loc.lng }
                 : await geocodeCity(loc.city);
             if (!coords) return null;
-            return { location: loc.label, lat: coords.lat, lng: coords.lng };
+            return { location: loc.label, lat: coords.lat, lng: coords.lng, stays: loc.stays };
           })
         )
-      ).filter(Boolean) as Array<{ location: string; lat: number; lng: number }>;
+      ).filter(Boolean) as Array<{
+        location: string;
+        lat: number;
+        lng: number;
+        stays: Stay[];
+      }>;
 
       // Fetch all location forecasts in parallel
       const locationResults = await Promise.all(
@@ -279,11 +300,21 @@ export default function WeatherPage() {
         const tripDays = filterTripDays(fc.days);
         const allDays = fc.days.length > 0 ? (tripDays.length > 0 ? tripDays : fc.days.slice(0, 7)) : [];
 
+        const dayLabel =
+          config && fc.stays.length
+            ? stayDayLabel(fc.stays, config.startDate, totalDays)
+            : '';
+
         return (
           <section key={fc.location} className="weather-section">
             <div className="weather-section-header">
               <Sun size={18} />
               <h2>{fc.location}</h2>
+              {dayLabel && (
+                <span className="weather-stay-days">
+                  {isRTL ? `ימים ${dayLabel}` : `Days ${dayLabel}`}
+                </span>
+              )}
             </div>
 
             {fc.error ? (
@@ -295,9 +326,16 @@ export default function WeatherPage() {
                 {isRTL ? 'אין נתוני תחזית' : 'No forecast data available'}
               </p>
             ) : (
-              <div className="weather-days-grid">
+              <div
+                className={`weather-days-grid${fc.stays.length ? ' weather-days-grid--staged' : ''}`}
+              >
                 {allDays.map((day) => (
-                  <WeatherDayCard key={day.time} day={day} formatDay={formatDay} />
+                  <WeatherDayCard
+                    key={day.time}
+                    day={day}
+                    formatDay={formatDay}
+                    here={isStayDate(fc.stays, day.time)}
+                  />
                 ))}
               </div>
             )}
@@ -345,12 +383,15 @@ export default function WeatherPage() {
 function WeatherDayCard({
   day,
   formatDay,
+  here = false,
 }: {
   day: DailyWeather;
   formatDay: (d: string) => string;
+  /** True when the trip is actually in this location on this date. */
+  here?: boolean;
 }) {
   return (
-    <div className="weather-day-card">
+    <div className={`weather-day-card${here ? ' weather-day-card--here' : ''}`}>
       <div className="weather-day-date">{formatDay(day.time)}</div>
       <div className="weather-day-icon">
         <WeatherIcon code={day.weathercode} size={28} />

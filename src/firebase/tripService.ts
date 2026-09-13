@@ -15,6 +15,17 @@ import { db, storage } from './config';
 import { airportCoords, estimateRouteByGeo, type Coords, type PlaceRef } from '../utils/geocode';
 import { SECTION_COLLECTION, rowKey } from '../utils/tripSnapshot';
 import { migratePlanTimesToDayParts } from '../utils/dayParts';
+import {
+  applyToPlanItem,
+  batchRequests,
+  buildTranslationPrompt,
+  collectMissingHebrew,
+  groupByRecord,
+  pairTranslations,
+  type TranslatableContent,
+  type TranslationRequest,
+} from '../utils/translateContent';
+import { stripJsonFences } from '../ai';
 import type { ImportPlan } from '../utils/tripImportPlan';
 import type {
   TripConfig,
@@ -468,6 +479,78 @@ export async function importTripData(
   await batchSave(data.highlights, 'highlights');
   await batchSave(data.restaurants, 'restaurants');
   await batchSave(data.packing, 'packing');
+}
+
+// ─── Hebrew backfill ─────────────────────────────────────────────────────────
+/**
+ * Fill in the Hebrew counterparts a trip's content is missing, using the
+ * caller-supplied translator (the AI helper, injected so this stays testable
+ * and so the service layer does not reach into UI settings).
+ *
+ * Existing Hebrew is never touched — a human translation outranks a machine
+ * one — and each batch is written as it returns, so a failure part-way through
+ * keeps whatever already succeeded.
+ */
+export async function backfillHebrew(
+  tripCode: string,
+  content: TranslatableContent,
+  translate: (prompt: string) => Promise<string>,
+  onProgress?: (done: number, total: number) => void
+): Promise<{ translated: number; records: number; failedBatches: number }> {
+  const requests = collectMissingHebrew(content);
+  if (!requests.length) return { translated: 0, records: 0, failedBatches: 0 };
+
+  const batches = batchRequests(requests);
+  const paired: Array<{ request: TranslationRequest; hebrew: string }> = [];
+  let failedBatches = 0;
+  let done = 0;
+
+  for (const batch of batches) {
+    try {
+      const raw = await translate(buildTranslationPrompt(batch));
+      const parsed = JSON.parse(stripJsonFences(raw));
+      const matched = pairTranslations(batch, parsed);
+      // A mismatched response would pair one item's Hebrew onto another, so
+      // pairTranslations returns nothing and the whole batch is skipped.
+      if (!matched.length) failedBatches++;
+      paired.push(...matched);
+    } catch {
+      failedBatches++;
+    }
+    done += batch.length;
+    onProgress?.(done, requests.length);
+  }
+
+  const byRecord = groupByRecord(paired);
+  const dayEdits = new Map<number, Map<string, Record<string, string>>>();
+  let records = 0;
+
+  for (const { request, fields } of byRecord.values()) {
+    if (request.collection === 'planItems') {
+      const dayIndex = request.dayIndex ?? 0;
+      const forDay = dayEdits.get(dayIndex) ?? new Map();
+      forDay.set(request.recordId, fields);
+      dayEdits.set(dayIndex, forDay);
+      continue;
+    }
+    await updateDoc(doc(db, 'trips', tripCode, request.collection, request.recordId), fields);
+    records++;
+  }
+
+  // Plan items live inside a day document, so each touched day is written once
+  // with all of its items' translations rather than once per item.
+  for (const [dayIndex, edits] of dayEdits) {
+    const day = content.days.find((d) => d.dayIndex === dayIndex);
+    if (!day?.plan?.items) continue;
+    const items = day.plan.items.map((item) => {
+      const fields = edits.get(item.id);
+      return fields ? applyToPlanItem(item, fields) : item;
+    });
+    await saveTripDay(tripCode, { ...day, plan: { ...day.plan, items } });
+    records += edits.size;
+  }
+
+  return { translated: paired.length, records, failedBatches };
 }
 
 // ─── Plan migration: clock times → parts of day ──────────────────────────────

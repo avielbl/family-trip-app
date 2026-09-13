@@ -48,7 +48,30 @@ const AIRPORT_COORDS: Record<string, Coords> = {
   ath: { lat: 37.9364, lng: 23.9445 }, // Athens, Greece
 };
 
-const GEOCODE_CACHE_KEY = 'geocodeCache.v1';
+/**
+ * Where this trip actually is. Place names are wildly ambiguous — Montenegro
+ * alone has a city called Bar — and a gazetteer's first global match for one
+ * can land on another continent. When an anchor is set, several candidates are
+ * fetched and the nearest to it wins.
+ *
+ * Deliberately derived from the trip's own hotel coordinates rather than its
+ * countryCode: that field defaults to 'GR' for trips migrated from the earlier
+ * Greece-only version, so it cannot be trusted to describe where a trip is.
+ */
+let geocodeAnchor: Coords | null = null;
+
+export function setGeocodeAnchor(coords: Coords | null): void {
+  geocodeAnchor = coords && validCoords(coords) ? coords : null;
+}
+
+/** Cache bucket, so switching trips cannot serve another region's answers. */
+function anchorKey(): string {
+  return geocodeAnchor
+    ? `${Math.round(geocodeAnchor.lat)},${Math.round(geocodeAnchor.lng)}`
+    : 'anywhere';
+}
+
+const GEOCODE_CACHE_KEY = 'geocodeCache.v2';
 
 function readCache(): Record<string, Coords | null> {
   try {
@@ -142,12 +165,24 @@ async function fetchCoords(name: string): Promise<Coords | null> {
   try {
     const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
     url.searchParams.set('name', name);
-    url.searchParams.set('count', '1');
+    // With an anchor, ask for a shortlist and pick the nearest match rather
+    // than trusting whichever the gazetteer happens to rank first.
+    url.searchParams.set('count', geocodeAnchor ? '10' : '1');
     const res = await fetch(url.toString());
     if (!res.ok) return null;
     const data = await res.json();
-    const hit = data.results?.[0];
-    return hit ? { lat: hit.latitude as number, lng: hit.longitude as number } : null;
+    const results = (data.results ?? []) as Array<{ latitude: number; longitude: number }>;
+    if (!results.length) return null;
+
+    const candidates = results
+      .map((r) => ({ lat: r.latitude, lng: r.longitude }))
+      .filter(validCoords);
+    if (!candidates.length) return null;
+    if (!geocodeAnchor) return candidates[0];
+
+    return candidates.reduce((best, c) =>
+      haversineKm(c, geocodeAnchor!) < haversineKm(best, geocodeAnchor!) ? c : best
+    );
   } catch {
     return null;
   }
@@ -164,7 +199,8 @@ export async function geocode(place: string): Promise<Coords | null> {
   const instant = cachedCoords(place);
   if (instant) return instant;
   const cache = readCache();
-  if (key in cache) return cache[key]; // includes cached "not found" (null)
+  const cacheKey = `${anchorKey()}|${key}`;
+  if (cacheKey in cache) return cache[cacheKey]; // includes cached "not found" (null)
 
   let coords: Coords | null = null;
   for (const variant of placeSearchVariants(place)) {
@@ -180,7 +216,7 @@ export async function geocode(place: string): Promise<Coords | null> {
       }
     }
   }
-  cache[key] = coords;
+  cache[cacheKey] = coords;
   writeCache(cache);
   return coords;
 }

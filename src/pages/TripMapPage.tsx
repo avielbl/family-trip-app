@@ -7,6 +7,7 @@ import type { Hotel, Highlight, Restaurant, PlanItem } from '../types/trip';
 import { cachedCoords, geocodeMany } from '../utils/geocode';
 import { dayPartLabel, formatDuration, itemDayPart } from '../utils/dayParts';
 import { collectDriveLegs } from '../utils/driveLegs';
+import { localized } from '../utils/localize';
 
 // ─── Place coordinate resolution ─────────────────────────────────────────────
 // Names are resolved asynchronously via the shared geocoder (seed table →
@@ -465,12 +466,16 @@ export default function TripMapPage() {
         L.marker([pt.lat, pt.lng], { icon })
           .addTo(map)
           .bindPopup(
-            `<div style="font-family:Inter,sans-serif;min-width:140px;">
-              <strong style="color:${color}">${hl.name}</strong><br/>
+            (() => {
+              const title = localized(hl, 'name', isRTL);
+              const blurb = localized(hl, 'description', isRTL);
+              return `<div style="font-family:Inter,sans-serif;min-width:140px;">
+              <strong style="color:${color}">${title}</strong><br/>
               <span style="font-size:11px;color:#6b7280;text-transform:capitalize">${hl.category}</span>
-              ${hl.description ? `<br/><span style="font-size:12px">${hl.description.slice(0, 80)}${hl.description.length > 80 ? '…' : ''}</span>` : ''}
-              ${hl.completed ? '<br/><span style="font-size:11px;color:#16a34a">✓ Visited</span>' : ''}
-            </div>`
+              ${blurb ? `<br/><span style="font-size:12px">${blurb.slice(0, 80)}${blurb.length > 80 ? '…' : ''}</span>` : ''}
+              ${hl.completed ? `<br/><span style="font-size:11px;color:#16a34a">✓ ${isRTL ? 'בוצע' : 'Visited'}</span>` : ''}
+            </div>`;
+            })()
           );
       });
 
@@ -497,8 +502,8 @@ export default function TripMapPage() {
           .addTo(map)
           .bindPopup(
             `<div style="font-family:Inter,sans-serif;min-width:140px;">
-              <strong style="color:#16a34a">🍴 ${r.name}</strong><br/>
-              ${r.cuisine ? `<span style="font-size:11px;color:#6b7280">${r.cuisine}</span><br/>` : ''}
+              <strong style="color:#16a34a">🍴 ${localized(r, 'name', isRTL)}</strong><br/>
+              ${localized(r, 'cuisine', isRTL) ? `<span style="font-size:11px;color:#6b7280">${localized(r, 'cuisine', isRTL)}</span><br/>` : ''}
               ${r.city ? `<span style="font-size:11px;color:#6b7280">${r.city}</span>` : ''}
               ${r.priceRange ? `<br/><span style="font-size:11px">${r.priceRange}</span>` : ''}
               ${r.visited ? '<br/><span style="font-size:11px;color:#16a34a">✓ Visited</span>' : ''}
