@@ -5,6 +5,7 @@ import { useTripContext } from '../context/TripContext';
 import { earnStamp, deletePassportStamp, savePassportStamp } from '../firebase/tripService';
 import AISuggestPanel from '../components/AISuggestPanel';
 import type { PassportStamp } from '../types/ai';
+import { localized } from '../utils/localize';
 
 // ─── Legacy fallback (no Firestore stamps yet) ────────────────────────────────
 
@@ -157,11 +158,16 @@ const PassportPage: React.FC = () => {
                   )}
                   <div className="passport-stamp-icon">{stamp.icon}</div>
                   <div className="passport-stamp-title">
-                    {isHebrew && stamp.titleHe ? stamp.titleHe : stamp.title}
+                    {localized(stamp, 'title', isHebrew)}
                   </div>
                   <div className="passport-stamp-location">
                     {isHebrew ? 'יום' : 'Day'} {stamp.dayIndex + 1} · {stamp.location}
                   </div>
+                  {localized(stamp, 'description', isHebrew) && (
+                    <div className="passport-stamp-description">
+                      {localized(stamp, 'description', isHebrew)}
+                    </div>
+                  )}
 
                   {!isEarned && (stamp.highlightId ? (
                     autoEarnable && currentMember && tripCode ? (

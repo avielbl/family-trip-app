@@ -4,6 +4,7 @@ import { UtensilsCrossed, Star, MapPin, Phone, ExternalLink, DollarSign, Plus, P
 import { useTripContext } from '../context/TripContext';
 import { rateRestaurant, saveRestaurant, deleteRestaurant } from '../firebase/tripService';
 import type { Restaurant } from '../types/trip';
+import { localized } from '../utils/localize';
 import AIImportModal from '../components/AIImportModal';
 import AISuggestPanel from '../components/AISuggestPanel';
 
@@ -190,7 +191,7 @@ const RestaurantsPage: React.FC = () => {
       <div className="restaurants-list">
         {filteredRestaurants.map((restaurant) => {
           const avgRating = getAverageRating(restaurant.ratings);
-          const displayName = isHebrew && restaurant.nameHe ? restaurant.nameHe : restaurant.name;
+          const displayName = localized(restaurant, 'name', isHebrew);
 
           return (
             <div key={restaurant.id} className={`restaurant-card ${restaurant.visited ? 'visited' : ''}`}>
@@ -202,10 +203,10 @@ const RestaurantsPage: React.FC = () => {
               </div>
 
               <div className="restaurant-meta">
-                {restaurant.cuisine && (
+                {localized(restaurant, 'cuisine', isHebrew) && (
                   <span className="meta-item cuisine">
                     <UtensilsCrossed size={14} />
-                    {t('restaurants.cuisine')}: {restaurant.cuisine}
+                    {t('restaurants.cuisine')}: {localized(restaurant, 'cuisine', isHebrew)}
                   </span>
                 )}
                 {restaurant.priceRange && (
@@ -237,8 +238,8 @@ const RestaurantsPage: React.FC = () => {
                 )}
               </div>
 
-              {restaurant.notes && (
-                <p className="restaurant-notes">{restaurant.notes}</p>
+              {localized(restaurant, 'notes', isHebrew) && (
+                <p className="restaurant-notes">{localized(restaurant, 'notes', isHebrew)}</p>
               )}
 
               <div className="restaurant-actions">

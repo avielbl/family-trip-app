@@ -160,6 +160,7 @@ export interface Highlight {
   address?: string;
   openingHours?: string;
   ticketInfo?: string;
+  ticketInfoHe?: string;
   mapUrl?: string;
   lat?: number;
   lng?: number;
@@ -185,6 +186,7 @@ export interface Restaurant {
   name: string;
   nameHe?: string;
   cuisine?: string;
+  cuisineHe?: string;
   address?: string;
   city?: string;
   phone?: string;
@@ -194,6 +196,7 @@ export interface Restaurant {
   priceRange?: '$' | '$$' | '$$$';
   ratings: Record<string, number>; // memberId -> 1-5
   notes?: string;
+  notesHe?: string;
   visited: boolean;
 }
 

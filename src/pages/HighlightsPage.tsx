@@ -5,6 +5,7 @@ import { format, parseISO } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { toggleHighlightComplete, saveHighlight, deleteHighlight } from '../firebase/tripService';
 import type { Highlight, HighlightCategory } from '../types/trip';
+import { localized } from '../utils/localize';
 import AIImportModal from '../components/AIImportModal';
 import AISuggestPanel from '../components/AISuggestPanel';
 
@@ -46,7 +47,7 @@ const HighlightsPage: React.FC = () => {
   const isHebrew = i18n.language === 'he';
 
   const getHighlightName = (h: Highlight) => (isHebrew && h.nameHe ? h.nameHe : h.name);
-  const getHighlightDescription = (h: Highlight) => (isHebrew && h.descriptionHe ? h.descriptionHe : h.description);
+  const getHighlightDescription = (h: Highlight) => localized(h, 'description', isHebrew);
 
   const getMapUrl = (h: Highlight) => {
     if (h.mapUrl) return h.mapUrl;

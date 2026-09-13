@@ -3864,3 +3864,11 @@ body {
 .weather-days-grid--staged .weather-day-card:not(.weather-day-card--here) {
   opacity: 0.62;
 }
+
+/* Passport stamp blurb — was collected from the AI but never shown. */
+.passport-stamp-description {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
