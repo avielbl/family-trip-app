@@ -90,28 +90,3 @@ export function describeDuration(item: PlanItem, isRTL = false): string {
   if (item.kind === 'activity') return isRTL ? `ביקור ${duration}` : `${duration} visit`;
   return duration;
 }
-
-/**
- * Convert plan items that still carry a clock time. Returns the rewritten items
- * and how many changed, so a caller can preview the migration before saving.
- */
-export function migratePlanTimesToDayParts(items: PlanItem[]): {
-  items: PlanItem[];
-  converted: number;
-  /**
-   * Items left with no durationMinutes. Duration is the headline detail once
-   * clock times are gone, so a caller should surface this rather than let the
-   * gaps pass unnoticed.
-   */
-  missingDuration: number;
-} {
-  let converted = 0;
-  const next = items.map((item) => {
-    if (!item.startTime) return item;
-    const { startTime, ...rest } = item;
-    converted++;
-    return { ...rest, dayPart: item.dayPart ?? dayPartFromTime(startTime) ?? 'morning' };
-  });
-  const missingDuration = next.filter((item) => !item.durationMinutes).length;
-  return { items: next, converted, missingDuration };
-}
