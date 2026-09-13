@@ -3680,3 +3680,101 @@ body {
   background: var(--bg-accent);
   color: var(--text-secondary);
 }
+
+/* ─── Trip map: shell, fullscreen, drive routes ─── */
+.map-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.map-filter-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.map-canvas {
+  position: relative;
+}
+
+/* Fullscreen is done in CSS rather than the Fullscreen API: iOS Safari only
+   supports that API on <video>, and this app is installed to home screens. */
+.map-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  padding: 10px;
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  background: var(--bg-primary);
+}
+
+.map-fullscreen .map-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.map-fullscreen .map-container {
+  height: 100%;
+  min-height: 0;
+}
+
+.map-fullscreen .map-filter-bar {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.map-fullscreen .map-filter-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.map-fullscreen .map-filter-bar .filter-tab {
+  flex: 0 0 auto;
+}
+
+.map-fullscreen-toggle {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.map-fullscreen-toggle:hover {
+  background: var(--bg-tertiary);
+}
+
+.map-exit-fullscreen {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: auto;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.map-exit-fullscreen:hover {
+  background: var(--bg-tertiary);
+}
