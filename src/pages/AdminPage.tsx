@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Clock } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useFamilyContext } from '../context/FamilyContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, migratePlansToDayParts } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
@@ -17,7 +17,7 @@ import type { AIConfig } from '../types/ai';
 export default function AdminPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { config, tripCode, isAdmin, quizQuestions, totalDays } = useTripContext();
+  const { config, tripCode, isAdmin, quizQuestions, totalDays, days } = useTripContext();
   const { firebaseUser } = useAuthContext();
   const { family, familyId } = useFamilyContext();
   const isHe = i18n.language === 'he';
@@ -43,6 +43,8 @@ export default function AdminPage() {
   const [quizBusy, setQuizBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [quizError, setQuizError] = useState('');
+  const [dayPartsBusy, setDayPartsBusy] = useState(false);
+  const [dayPartsResult, setDayPartsResult] = useState('');
 
   // Greece-only content seeds (legacy) — hidden on other destinations.
   const isGreeceTrip = ((config?.destination ?? '') + (config?.tripName ?? ''))
@@ -231,6 +233,33 @@ Return ONLY valid JSON, no markdown.`;
     setMembers([...members, newMember]);
   }
 
+  // Plans used to carry clock times; they are now scheduled by part of day.
+  // Existing trips keep their old items until this converts them in place.
+  async function handleMigrateDayParts() {
+    if (!tripCode) return;
+    setDayPartsBusy(true);
+    setDayPartsResult('');
+    try {
+      const { daysChanged, itemsConverted, missingDuration } = await migratePlansToDayParts(tripCode, days);
+      const converted =
+        itemsConverted === 0
+          ? (isHe ? 'אין מה להמיר — התוכנית כבר לפי חלקי יום.' : 'Nothing to convert — the plan already uses parts of day.')
+          : (isHe
+              ? `הומרו ${itemsConverted} פריטים ב-${daysChanged} ימים.`
+              : `Converted ${itemsConverted} items across ${daysChanged} days.`);
+      const gap = missingDuration
+        ? (isHe
+            ? ` ל-${missingDuration} פריטים אין משך זמן — כדאי להשלים, זה הפרט המרכזי עכשיו.`
+            : ` ${missingDuration} items have no duration — worth filling in, that is the headline detail now.`)
+        : '';
+      setDayPartsResult(converted + gap);
+    } catch (err) {
+      setDayPartsResult((err as Error).message);
+    } finally {
+      setDayPartsBusy(false);
+    }
+  }
+
   function removeMember(idx: number) {
     setMembers(members.filter((_, i) => i !== idx));
   }
@@ -387,6 +416,28 @@ Return ONLY valid JSON, no markdown.`;
           <FileDown size={14} />
           {isHe ? 'ייצוא / ייבוא' : 'Export / Import'}
         </button>
+      </div>
+
+      {/* One-off conversion of plans that still carry clock times */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <Clock size={16} />
+          {isHe ? 'המרת תוכנית לחלקי יום' : 'Convert plan to parts of day'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          {isHe
+            ? 'תוכניות נבנות עכשיו לפי בוקר/צהריים/אחה״צ/ערב במקום שעות מדויקות. ההמרה מעבירה פריטים ישנים לחלק היום המתאים ומשאירה את משכי הזמן כפי שהם. אפשר להריץ שוב בבטחה.'
+            : 'Plans are now organised by morning/noon/afternoon/evening instead of exact times. This moves older items to the matching part of day and leaves every duration untouched. Safe to run more than once.'}
+        </p>
+        <button className="admin-btn primary" onClick={handleMigrateDayParts} disabled={dayPartsBusy}>
+          {dayPartsBusy ? <Loader2 size={14} className="spin" /> : <Clock size={14} />}
+          {dayPartsBusy
+            ? (isHe ? 'ממיר...' : 'Converting...')
+            : (isHe ? 'המר עכשיו' : 'Convert now')}
+        </button>
+        {dayPartsResult && (
+          <p style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-secondary)' }}>{dayPartsResult}</p>
+        )}
       </div>
 
       {/* Invite Link */}

@@ -14,6 +14,7 @@ import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 import { airportCoords, estimateRouteByGeo, type Coords, type PlaceRef } from '../utils/geocode';
 import { SECTION_COLLECTION, rowKey } from '../utils/tripSnapshot';
+import { migratePlanTimesToDayParts } from '../utils/dayParts';
 import type { ImportPlan } from '../utils/tripImportPlan';
 import type {
   TripConfig,
@@ -467,6 +468,42 @@ export async function importTripData(
   await batchSave(data.highlights, 'highlights');
   await batchSave(data.restaurants, 'restaurants');
   await batchSave(data.packing, 'packing');
+}
+
+// ─── Plan migration: clock times → parts of day ──────────────────────────────
+/**
+ * Rewrite already-saved plan items that still carry a clock time, replacing it
+ * with the part of day it fell in. Durations are left exactly as they are —
+ * they were always the useful number and are now the headline one.
+ *
+ * Idempotent: an item with no startTime is not rewritten, so a second run is a
+ * no-op and only days that actually change are written.
+ */
+export async function migratePlansToDayParts(
+  tripCode: string,
+  days: TripDay[]
+): Promise<{ daysChanged: number; itemsConverted: number; missingDuration: number }> {
+  let daysChanged = 0;
+  let itemsConverted = 0;
+  let missingDuration = 0;
+
+  for (const day of days) {
+    const items = day.plan?.items;
+    if (!items?.length) continue;
+    const result = migratePlanTimesToDayParts(items);
+    // Count duration gaps across the whole trip, including days that needed no
+    // conversion — they are equally worth fixing now that duration is the
+    // detail every item is read for.
+    missingDuration += result.missingDuration;
+    if (!result.converted) continue;
+    daysChanged++;
+    itemsConverted += result.converted;
+    await saveTripDay(tripCode, {
+      ...day,
+      plan: { ...(day.plan ?? {}), items: result.items },
+    });
+  }
+  return { daysChanged, itemsConverted, missingDuration };
 }
 
 // ─── Snapshot import (JSON / Excel round trip) ───────────────────────────────

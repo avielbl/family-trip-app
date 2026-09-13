@@ -19,7 +19,8 @@ import { format, parseISO, addDays } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { saveTripDay, savePlanPrefs, loadPlanPrefs } from '../firebase/tripService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
-import type { TripDay, Hotel, Flight, DrivingSegment, Highlight, Restaurant, PlanItem } from '../types/trip';
+import type { TripDay, Hotel, Flight, DrivingSegment, Highlight, Restaurant, PlanItem, DayPart } from '../types/trip';
+import { DAY_PARTS, dayPartFromTime } from '../utils/dayParts';
 import { PlanItemsList, PlanQuestionnaire, type PlanPreferences } from '../components/PlanItems';
 
 // ─── Curated Greece itinerary suggestions ────────────────────────────────────
@@ -390,19 +391,22 @@ ${prefs.extra ? `- Notes: ${prefs.extra}` : ''}
 PLANNING RULES:
 1. Anchor every day to that night's hotel. On hotel-change days include the transfer drive.
 2. Every drive is its own item (kind "drive") with realistic distanceKm and durationMinutes between the actual places. Keep total daily driving reasonable for kids.
-3. Include meals (kind "meal") at realistic times (~08:30 breakfast, ~13:00 lunch, ~18:30 dinner) with a concrete place or area matching the meals preference.
-4. Give each activity a realistic durationMinutes and startTime; don't overpack — respect the pace.
-5. Arrival/departure days must be light and fit the flight times.
-6. For activities: include website, price, openingHours ONLY when you are reasonably confident; otherwise null. Mark clearly estimated prices with "~".
-7. Bilingual: name/nameHe and notes/notesHe (Hebrew).
+3. Include meals (kind "meal") with a concrete place or area matching the meals preference: breakfast in the morning, lunch at noon, dinner in the evening.
+4. NEVER give clock times. Place each item in a part of the day — dayPart is one of "morning", "noon", "afternoon", "evening" — and give it a realistic durationMinutes. A family trip does not run to a timetable; how long something takes is what matters, not when it starts.
+5. Order items within a day part the way they should happen; don't overpack — respect the pace. Aim for roughly 1-3 items per day part.
+6. Arrival/departure days must be light and fit around the flight times.
+7. For activities: include website, price, openingHours ONLY when you are reasonably confident; otherwise null. Mark clearly estimated prices with "~".
+8. Bilingual: name/nameHe and notes/notesHe (Hebrew).
 
 OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
 {"dayIndex":0,"title":"","titleHe":"","location":"","locationHe":"","summary":"one-sentence overview of the day","summaryHe":"","items":[
- {"kind":"activity|meal|drive","name":"","nameHe":"","startTime":"09:00","durationMinutes":90,"location":"","website":null,"price":null,"openingHours":null,"notes":"","notesHe":"","from":null,"to":null,"distanceKm":null}
+ {"kind":"activity|meal|drive","name":"","nameHe":"","dayPart":"morning|noon|afternoon|evening","durationMinutes":90,"location":"","website":null,"price":null,"openingHours":null,"notes":"","notesHe":"","from":null,"to":null,"distanceKm":null}
 ]}`;
       const raw = await generateText(prompt, 32768);
       const parsed = JSON.parse(stripJsonFences(raw)) as Array<Record<string, unknown>>;
       const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+      const asDayPart = (v: unknown) =>
+        typeof v === 'string' && (DAY_PARTS as string[]).includes(v) ? (v as DayPart) : undefined;
       const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
       for (const item of parsed) {
         const di = Number(item.dayIndex);
@@ -416,7 +420,9 @@ OUTPUT — ONLY a valid JSON array (no markdown), one object per day:
             kind: it.kind === 'meal' || it.kind === 'drive' ? (it.kind as PlanItem['kind']) : 'activity',
             name: it.name as string,
             nameHe: str(it.nameHe),
-            startTime: str(it.startTime),
+            // Prefer an explicit dayPart; fall back to deriving one if the
+            // model slipped a clock time in anyway.
+            dayPart: asDayPart(it.dayPart) ?? dayPartFromTime(str(it.startTime)) ?? 'morning',
             durationMinutes: num(it.durationMinutes),
             location: str(it.location),
             website: str(it.website),

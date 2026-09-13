@@ -3647,3 +3647,36 @@ body {
   max-height: 180px;
   overflow-y: auto;
 }
+
+/* ─── Day-part plan grouping ─── */
+/* Plans are grouped by morning / noon / afternoon / evening rather than clock
+   times, so each group needs a quiet heading that reads as a band of the day. */
+.day-part-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* The duration is the headline detail on a plan item now that nothing carries
+   a start time — "30 min drive", "2 hr visit". */
+.plan-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-accent);
+  color: var(--text-secondary);
+}
