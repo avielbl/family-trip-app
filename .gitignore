@@ -31,3 +31,6 @@ dist-ssr
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Firebase Admin SDK service account key — never commit this
+serviceAccountKey.json

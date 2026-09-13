@@ -4,7 +4,8 @@ import { Send, X, MessageCircle, Check, XCircle, HelpCircle, Trash2, Bug } from 
 import { useTripContext } from '../context/TripContext';
 import { callAI, buildChatSystemPrompt, aiErrorMessage } from '../firebase/aiService';
 import { saveHighlight, saveRestaurant, saveDrivingSegment, deleteHighlight, deleteRestaurant, deleteDrivingSegment, saveTripDay } from '../firebase/tripService';
-import type { Highlight, Restaurant, DrivingSegment } from '../types/trip';
+import type { Highlight, Restaurant, DrivingSegment, DayPart } from '../types/trip';
+import { DAY_PARTS, dayPartFromTime } from '../utils/dayParts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -181,6 +182,11 @@ function parseActions(rawText: string): {
 }
 
 // ─── Data sanitizers — strip unsafe input before saving to Firestore ──────────
+
+/** Accept only a real day part; anything else falls through to a derived one. */
+function asDayPart(val: unknown): DayPart | undefined {
+  return typeof val === 'string' && (DAY_PARTS as string[]).includes(val) ? (val as DayPart) : undefined;
+}
 
 function sanitizeString(val: unknown, fallback = ''): string {
   if (typeof val === 'string') return val.slice(0, 500).trim();
@@ -565,7 +571,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
           kind,
           name: sanitizeString(action.data.name) || 'New plan item',
           nameHe: sanitizeString(action.data.nameHe) || undefined,
-          startTime: sanitizeString(action.data.startTime) || undefined,
+          dayPart: asDayPart(action.data.dayPart) ?? dayPartFromTime(sanitizeString(action.data.startTime)) ?? 'morning',
           durationMinutes: action.data.durationMinutes != null ? sanitizeNumber(action.data.durationMinutes, 0) || undefined : undefined,
           location: sanitizeString(action.data.location) || undefined,
           website: sanitizeString(action.data.website) || undefined,
@@ -630,7 +636,7 @@ export default function TripChatPanel({ open, onClose }: { open: boolean; onClos
             ...target,
             name: str(d.name) ?? target.name,
             nameHe: str(d.nameHe) ?? target.nameHe,
-            startTime: str(d.startTime) ?? target.startTime,
+            dayPart: asDayPart(d.dayPart) ?? dayPartFromTime(str(d.startTime)) ?? target.dayPart,
             durationMinutes: num(d.durationMinutes) ?? target.durationMinutes,
             location: str(d.location) ?? target.location,
             website: str(d.website) ?? target.website,

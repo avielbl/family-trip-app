@@ -1,5 +1,6 @@
 import type { AIConfig, ImportTarget, AIImportResult, AISuggestion } from '../types/ai';
 import type { Hotel, DrivingSegment, TripDay, Highlight, Restaurant, TripNote } from '../types/trip';
+import { itemDayPart } from '../utils/dayParts';
 
 const AI_CONFIG_KEY = 'aiConfig';
 
@@ -415,7 +416,7 @@ export function buildChatSystemPrompt(ctx: ChatContext): string {
       const items = (d.plan?.items ?? [])
         .map(
           (it) =>
-            `      - [id:${it.id}] ${it.startTime ?? '--:--'} ${it.kind} "${it.name}"` +
+            `      - [id:${it.id}] ${itemDayPart(it)} ${it.kind} "${it.name}"` +
             `${it.durationMinutes ? ` (${it.durationMinutes}m)` : ''}` +
             `${it.location ? ` @${it.location}` : ''}` +
             `${it.kind === 'drive' && it.from ? ` ${it.from} → ${it.to ?? ''}` : ''}` +
@@ -521,22 +522,24 @@ ACTION FORMAT (admin only — use ONLY when user explicitly asks to add or delet
 
 <action type="update_trip_day">{"dayIndex": 0, "title": "Arrival in Thessaloniki", "titleHe": "הגעה לסלוניקי", "location": "Thessaloniki", "locationHe": "סלוניקי"}</action>
 
-<action type="add_plan_item">{"dayIndex": 6, "kind": "activity", "name": "Ostrog Monastery", "nameHe": "מנזר אוסטרוג", "startTime": "10:30", "durationMinutes": 90, "location": "Ostrog, Montenegro", "website": null, "price": null, "openingHours": null, "notes": "", "notesHe": ""}</action>
+<action type="add_plan_item">{"dayIndex": 6, "kind": "activity", "name": "Ostrog Monastery", "nameHe": "מנזר אוסטרוג", "dayPart": "morning", "durationMinutes": 90, "location": "Ostrog, Montenegro", "website": null, "price": null, "openingHours": null, "notes": "", "notesHe": ""}</action>
 
 DAY NUMBERING (CRITICAL): every action's "dayIndex" is 0-BASED. The itinerary above shows both forms —
 "Day 7 [dayIndex=6]" means the user's "day 7" MUST be sent as dayIndex 6. Never send the Day label as dayIndex.
 
 Use update_trip_day when the user wants to change a day's location or title.
 You may omit fields you don't need to change (title, titleHe, location, locationHe — include only what changes).
-<action type="update_plan_item">{"dayIndex": 6, "id": "the-exact-id-from-DAY-PLANS", "startTime": "11:00", "durationMinutes": 120, "notes": "arrive early"}</action>
+<action type="update_plan_item">{"dayIndex": 6, "id": "the-exact-id-from-DAY-PLANS", "dayPart": "afternoon", "durationMinutes": 120, "notes": "arrive early"}</action>
 
 <action type="delete_plan_item">{"dayIndex": 6, "id": "the-exact-id-from-DAY-PLANS", "name": "Ostrog Monastery"}</action>
 
-Use update_plan_item to CHANGE an existing plan item (time, duration, name, location, website, price, openingHours, notes) — send only the fields that change, plus dayIndex and the exact id. To move an item to another day add "newDayIndex".
+Use update_plan_item to CHANGE an existing plan item (day part, duration, name, location, website, price, openingHours, notes) — send only the fields that change, plus dayIndex and the exact id. To move an item to another day add "newDayIndex".
 Use delete_plan_item to REMOVE an existing plan item.
 Both REQUIRE the exact "id" from the DAY PLANS list above — never invent one; if the item is not listed there, say so instead of guessing.
 
-Use add_plan_item when the user wants something added to a day's PLAN/itinerary (an activity, meal, or drive at a time of day). kind is "activity", "meal", or "drive" (drives also take "from","to","distanceKm").
+Use add_plan_item when the user wants something added to a day's PLAN/itinerary (an activity, meal, or drive). kind is "activity", "meal", or "drive" (drives also take "from","to","distanceKm").
+
+SCHEDULING (IMPORTANT): plan items are never given clock times. Each carries "dayPart" — one of "morning", "noon", "afternoon", "evening" — plus "durationMinutes" for how long to allow. If a user asks for something "at 3pm", record it as the afternoon with a sensible duration, and say so.
 
 ACTION TAG RULES (CRITICAL):
 - The payload must be STRICT JSON: double quotes around every key and string, no trailing commas, and ALWAYS end the tag with </action>.

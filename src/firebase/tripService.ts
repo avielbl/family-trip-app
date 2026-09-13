@@ -13,6 +13,9 @@ import type { DocumentData, Unsubscribe } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 import { airportCoords, estimateRouteByGeo, type Coords, type PlaceRef } from '../utils/geocode';
+import { SECTION_COLLECTION, rowKey } from '../utils/tripSnapshot';
+import { migratePlanTimesToDayParts } from '../utils/dayParts';
+import type { ImportPlan } from '../utils/tripImportPlan';
 import type {
   TripConfig,
   TripDay,
@@ -465,6 +468,110 @@ export async function importTripData(
   await batchSave(data.highlights, 'highlights');
   await batchSave(data.restaurants, 'restaurants');
   await batchSave(data.packing, 'packing');
+}
+
+// ─── Plan migration: clock times → parts of day ──────────────────────────────
+/**
+ * Rewrite already-saved plan items that still carry a clock time, replacing it
+ * with the part of day it fell in. Durations are left exactly as they are —
+ * they were always the useful number and are now the headline one.
+ *
+ * Idempotent: an item with no startTime is not rewritten, so a second run is a
+ * no-op and only days that actually change are written.
+ */
+export async function migratePlansToDayParts(
+  tripCode: string,
+  days: TripDay[]
+): Promise<{ daysChanged: number; itemsConverted: number; missingDuration: number }> {
+  let daysChanged = 0;
+  let itemsConverted = 0;
+  let missingDuration = 0;
+
+  for (const day of days) {
+    const items = day.plan?.items;
+    if (!items?.length) continue;
+    const result = migratePlanTimesToDayParts(items);
+    // Count duration gaps across the whole trip, including days that needed no
+    // conversion — they are equally worth fixing now that duration is the
+    // detail every item is read for.
+    missingDuration += result.missingDuration;
+    if (!result.converted) continue;
+    daysChanged++;
+    itemsConverted += result.converted;
+    await saveTripDay(tripCode, {
+      ...day,
+      plan: { ...(day.plan ?? {}), items: result.items },
+    });
+  }
+  return { daysChanged, itemsConverted, missingDuration };
+}
+
+// ─── Snapshot import (JSON / Excel round trip) ───────────────────────────────
+/**
+ * Apply a reviewed import plan. Sections the file omitted are left untouched;
+ * for the sections it contains, rows are written and — in mirror mode — rows
+ * the file dropped are deleted.
+ *
+ * Days keep their vestigial embedded arrays from the live document: the export
+ * strips them, so writing the stripped day back would blank fields we never
+ * meant to manage.
+ */
+export async function applyImportPlan(
+  tripCode: string,
+  plan: ImportPlan,
+  liveDays: TripDay[]
+): Promise<{ written: number; deleted: number }> {
+  const dayEmbedsByIndex = new Map(liveDays.map((d) => [String(d.dayIndex), d]));
+
+  // Firestore caps a batch at 500 operations; chunk to stay well inside it.
+  const ops: Array<{ kind: 'set' | 'delete'; path: [string, string]; data?: DocumentData }> = [];
+
+  for (const section of plan.sections) {
+    if (!section.present) continue;
+    const subcollection = SECTION_COLLECTION[section.section];
+    for (const row of [...section.added, ...section.updated]) {
+      const key = rowKey(section.section, row);
+      if (!key) continue;
+      let data = row as DocumentData;
+      if (section.section === 'days') {
+        const live = dayEmbedsByIndex.get(key);
+        data = {
+          ...data,
+          flights: live?.flights ?? [],
+          hotels: live?.hotels ?? [],
+          driving: live?.driving ?? [],
+          highlights: live?.highlights ?? [],
+          restaurants: live?.restaurants ?? [],
+        };
+      }
+      ops.push({ kind: 'set', path: [subcollection, key], data });
+    }
+    for (const row of section.removed) {
+      const key = rowKey(section.section, row);
+      if (key) ops.push({ kind: 'delete', path: [subcollection, key] });
+    }
+  }
+
+  const CHUNK = 400;
+  for (let i = 0; i < ops.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    for (const op of ops.slice(i, i + CHUNK)) {
+      const ref = doc(db, 'trips', tripCode, op.path[0], op.path[1]);
+      if (op.kind === 'set') batch.set(ref, op.data as DocumentData);
+      else batch.delete(ref);
+    }
+    await batch.commit();
+  }
+
+  // Config last: if anything above fails, the trip's identity is untouched.
+  if (plan.configChanged && plan.snapshot.config) {
+    await saveTripConfig({ ...plan.snapshot.config, tripCode });
+  }
+
+  return {
+    written: ops.filter((o) => o.kind === 'set').length + (plan.configChanged ? 1 : 0),
+    deleted: ops.filter((o) => o.kind === 'delete').length,
+  };
 }
 
 // ─── Auto-generate driving routes from hotels + flights ──────────────────────

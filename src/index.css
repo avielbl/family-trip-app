@@ -318,6 +318,16 @@ body {
   margin: 6px 0;
 }
 
+/* Links inside cards (phone numbers, booking URLs) had no colour of their own,
+   so they fell back to the browser default blue — unreadable on a dark card. */
+.card-detail a {
+  color: var(--blue-600);
+}
+
+[data-theme="dark"] .card-detail a {
+  color: var(--blue-300);
+}
+
 .card-detail svg {
   flex-shrink: 0;
   color: var(--blue-500);
@@ -590,6 +600,15 @@ body {
   border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 20px;
+}
+
+/* The tinted surfaces below are built from the fixed light palette, which has
+   no dark-mode value. Their text comes from the themed --text-* tokens, so in
+   dark mode they turned near-white text onto a near-white card. Re-tint them
+   with themed surfaces and keep the blue accent on the border. */
+[data-theme="dark"] .driving-page .rental-card {
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-accent));
+  border-color: var(--blue-800);
 }
 
 .driving-day-group {
@@ -880,6 +899,11 @@ body {
   border-color: var(--blue-400);
   background: linear-gradient(135deg, var(--blue-50), var(--blue-100));
   transform: rotate(-3deg);
+}
+
+[data-theme="dark"] .stamp-slot.stamp-earned {
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-accent));
+  border-color: var(--blue-500);
 }
 
 .stamp-emoji {
@@ -1480,6 +1504,11 @@ body {
 .member-card.member-selected {
   border-color: var(--blue-500);
   background: var(--blue-50);
+}
+
+[data-theme="dark"] .member-card.member-selected {
+  background: var(--bg-accent);
+  border-color: var(--blue-400);
 }
 
 .member-emoji {
@@ -3536,4 +3565,118 @@ body {
 }
 .chat-action-update .chat-action-label {
   color: #0891b2;
+}
+
+/* ─── Export / import plan page ─── */
+.data-transfer-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.data-transfer-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+.data-transfer-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.data-transfer-ok {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--green-600);
+}
+
+[data-theme="dark"] .data-transfer-ok {
+  color: var(--green-400);
+}
+
+.data-transfer-plan {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.data-transfer-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.data-transfer-summary {
+  margin: 0 0 12px;
+  padding-inline-start: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+/* Deletions are the one irreversible part of an import — call them out. */
+.data-transfer-danger {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--red-400);
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.data-transfer-danger .data-transfer-summary-title {
+  color: var(--red-500);
+}
+
+.data-transfer-danger .data-transfer-summary {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* ─── Day-part plan grouping ─── */
+/* Plans are grouped by morning / noon / afternoon / evening rather than clock
+   times, so each group needs a quiet heading that reads as a band of the day. */
+.day-part-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* The duration is the headline detail on a plan item now that nothing carries
+   a start time — "30 min drive", "2 hr visit". */
+.plan-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-accent);
+  color: var(--text-secondary);
 }

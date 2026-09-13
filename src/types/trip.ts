@@ -236,12 +236,26 @@ export interface QuizAnswer {
 
 // A single scheduled element of a day plan — activity, meal, or drive —
 // with practical details and an approval flag (approved items appear on the map).
+/**
+ * When in the day something happens. Plans are deliberately scheduled by part
+ * of day rather than clock time: a family trip never runs to the minute, and a
+ * precise "09:00" reads as a commitment the day cannot keep. How long a thing
+ * takes (durationMinutes) is the useful number; when exactly it starts is not.
+ */
+export type DayPart = 'morning' | 'noon' | 'afternoon' | 'evening';
+
 export interface PlanItem {
   id: string;
   kind: 'activity' | 'meal' | 'drive';
   name: string;
   nameHe?: string;
+  dayPart?: DayPart;
+  /**
+   * @deprecated Superseded by dayPart. Retained so plans saved before the
+   * switch still render and can be migrated (see migratePlanTimesToDayParts).
+   */
   startTime?: string; // "09:00"
+  /** How long to allow for this — the headline detail, shown on every item. */
   durationMinutes?: number;
   location?: string; // place or city (geocodable)
   lat?: number;

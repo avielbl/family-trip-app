@@ -15,7 +15,15 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import type { PlanItem, TripDay } from '../types/trip';
+import type { DayPart, PlanItem, TripDay } from '../types/trip';
+import {
+  DAY_PARTS,
+  DAY_PART_LABELS,
+  dayPartLabel,
+  describeDuration,
+  groupByDayPart,
+  itemDayPart,
+} from '../utils/dayParts';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -27,23 +35,11 @@ export function gmapsDirUrl(from?: string, to?: string): string {
   return `https://www.google.com/maps/dir/?api=1&${p.toString()}`;
 }
 
-function fmtDuration(mins?: number, isRTL?: boolean): string {
-  if (!mins) return '';
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  const parts = [h ? `${h}h` : '', m ? `${m}m` : ''].filter(Boolean).join(' ');
-  return isRTL ? parts.replace('h', ' ש׳').replace('m', ' דק׳') : parts;
-}
-
 const KIND_META: Record<PlanItem['kind'], { icon: typeof Star; color: string }> = {
   activity: { icon: Star, color: '#7c3aed' },
   meal: { icon: UtensilsCrossed, color: '#dc2626' },
   drive: { icon: Car, color: '#1d4ed8' },
 };
-
-function sortByTime(items: PlanItem[]): PlanItem[] {
-  return [...items].sort((a, b) => (a.startTime ?? '99').localeCompare(b.startTime ?? '99'));
-}
 
 // ─── Item list with approve/edit/delete/add ──────────────────────────────────
 
@@ -61,7 +57,8 @@ export function PlanItemsList({
   const navigate = useNavigate();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const items = sortByTime(tripDay.plan?.items ?? []);
+  const items = tripDay.plan?.items ?? [];
+  const groups = groupByDayPart(items);
 
   async function persist(nextItems: PlanItem[]) {
     await onSave({ ...tripDay, plan: { ...(tripDay.plan ?? {}), items: nextItems } });
@@ -76,115 +73,126 @@ export function PlanItemsList({
     await persist(items.filter((i) => i.id !== item.id));
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {items.map((item) => {
-        const meta = KIND_META[item.kind] ?? KIND_META.activity;
-        const Icon = meta.icon;
-        const name = isRTL ? item.nameHe || item.name : item.name;
-        const notes = isRTL ? item.notesHe || item.notes : item.notes;
-        if (editingId === item.id) {
-          return (
-            <PlanItemForm
-              key={item.id}
-              initial={item}
-              isRTL={isRTL}
-              onCancel={() => setEditingId(null)}
-              onSubmit={async (updated) => {
-                await persist(items.map((i) => (i.id === item.id ? updated : i)));
-                setEditingId(null);
-              }}
-            />
-          );
-        }
+  function renderItem(item: PlanItem) {
+      const meta = KIND_META[item.kind] ?? KIND_META.activity;
+      const Icon = meta.icon;
+      const name = isRTL ? item.nameHe || item.name : item.name;
+      const notes = isRTL ? item.notesHe || item.notes : item.notes;
+      if (editingId === item.id) {
         return (
-          <div
+          <PlanItemForm
             key={item.id}
-            style={{
-              border: `1px solid ${item.approved ? meta.color : 'var(--border-color, #e5e7eb)'}`,
-              borderRadius: 10,
-              padding: '8px 10px',
-              opacity: item.approved === false ? 0.9 : 1,
+            initial={item}
+            isRTL={isRTL}
+            onCancel={() => setEditingId(null)}
+            onSubmit={async (updated) => {
+              await persist(items.map((i) => (i.id === item.id ? updated : i)));
+              setEditingId(null);
             }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Icon size={15} color={meta.color} />
-              {item.startTime && (
-                <span style={{ fontSize: 12, fontWeight: 700 }}>
-                  <Clock size={11} /> {item.startTime}
-                </span>
-              )}
-              <span style={{ fontWeight: 600, flex: 1, minWidth: 120 }}>{name}</span>
-              {item.approved && (
-                <span style={{ fontSize: 11, color: meta.color, fontWeight: 700 }}>
-                  ✓ {isRTL ? 'מאושר' : 'approved'}
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              {item.durationMinutes ? <span>⏱ {fmtDuration(item.durationMinutes, isRTL)}</span> : null}
-              {item.kind === 'drive' && item.distanceKm ? <span>{item.distanceKm} km</span> : null}
-              {item.location && item.kind !== 'drive' ? <span><MapPin size={11} /> {item.location}</span> : null}
-              {item.kind === 'drive' && (item.from || item.to) ? <span>{item.from} ← {item.to}</span> : null}
-              {item.price && <span><Ticket size={11} /> {item.price}</span>}
-              {item.openingHours && <span><DoorOpen size={11} /> {item.openingHours}</span>}
-              {item.website && (
-                <a href={item.website} target="_blank" rel="noreferrer" style={{ color: 'var(--blue-600, #2563eb)' }}>
-                  <Globe size={11} /> {isRTL ? 'אתר' : 'website'}
-                </a>
-              )}
-            </div>
-            {notes && <div style={{ fontSize: 12, marginTop: 4 }}>{notes}</div>}
-            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              {item.kind === 'drive' ? (
-                <a
-                  className="admin-btn secondary"
-                  style={{ fontSize: 12, textDecoration: 'none' }}
-                  href={gmapsDirUrl(item.from, item.to)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Car size={12} /> {isRTL ? 'ניווט במפות' : 'Open directions'}
-                </a>
-              ) : (
-                (item.lat || item.location) && (
-                  <button
-                    className="admin-btn secondary"
-                    style={{ fontSize: 12 }}
-                    onClick={() =>
-                      navigate(
-                        item.lat && item.lng
-                          ? `/map?focus=${item.lat},${item.lng}&label=${encodeURIComponent(name)}`
-                          : `/map?focusName=${encodeURIComponent(item.location ?? name)}&label=${encodeURIComponent(name)}`
-                      )
-                    }
-                  >
-                    <MapPin size={12} /> {isRTL ? 'הצג במפה' : 'Show on map'}
-                  </button>
-                )
-              )}
-              {isAdmin && (
-                <>
-                  <button
-                    className="admin-btn secondary"
-                    style={{ fontSize: 12, ...(item.approved ? {} : { borderColor: meta.color, color: meta.color }) }}
-                    onClick={() => toggleApproved(item)}
-                  >
-                    {item.approved ? <X size={12} /> : <Check size={12} />}
-                    {item.approved ? (isRTL ? 'בטל אישור' : 'Unapprove') : (isRTL ? 'אשר' : 'Approve')}
-                  </button>
-                  <button className="admin-icon-btn" onClick={() => setEditingId(item.id)} title={isRTL ? 'עריכה' : 'Edit'}>
-                    <Pencil size={13} />
-                  </button>
-                  <button className="admin-icon-btn delete" onClick={() => remove(item)} title={isRTL ? 'מחיקה' : 'Delete'}>
-                    <Trash2 size={13} />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+          />
         );
-      })}
+      }
+      return (
+        <div
+          key={item.id}
+          style={{
+            border: `1px solid ${item.approved ? meta.color : 'var(--border-color, #e5e7eb)'}`,
+            borderRadius: 10,
+            padding: '8px 10px',
+            opacity: item.approved === false ? 0.9 : 1,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Icon size={15} color={meta.color} />
+            <span style={{ fontWeight: 600, flex: 1, minWidth: 120 }}>{name}</span>
+            {item.durationMinutes ? (
+              <span className="plan-duration">
+                <Clock size={11} /> {describeDuration(item, isRTL)}
+              </span>
+            ) : null}
+            {item.approved && (
+              <span style={{ fontSize: 11, color: meta.color, fontWeight: 700 }}>
+                ✓ {isRTL ? 'מאושר' : 'approved'}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {item.kind === 'drive' && item.distanceKm ? <span>{item.distanceKm} km</span> : null}
+            {item.location && item.kind !== 'drive' ? <span><MapPin size={11} /> {item.location}</span> : null}
+            {item.kind === 'drive' && (item.from || item.to) ? <span>{item.from} ← {item.to}</span> : null}
+            {item.price && <span><Ticket size={11} /> {item.price}</span>}
+            {item.openingHours && <span><DoorOpen size={11} /> {item.openingHours}</span>}
+            {item.website && (
+              <a href={item.website} target="_blank" rel="noreferrer" style={{ color: 'var(--blue-600, #2563eb)' }}>
+                <Globe size={11} /> {isRTL ? 'אתר' : 'website'}
+              </a>
+            )}
+          </div>
+          {notes && <div style={{ fontSize: 12, marginTop: 4 }}>{notes}</div>}
+          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+            {item.kind === 'drive' ? (
+              <a
+                className="admin-btn secondary"
+                style={{ fontSize: 12, textDecoration: 'none' }}
+                href={gmapsDirUrl(item.from, item.to)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Car size={12} /> {isRTL ? 'ניווט במפות' : 'Open directions'}
+              </a>
+            ) : (
+              (item.lat || item.location) && (
+                <button
+                  className="admin-btn secondary"
+                  style={{ fontSize: 12 }}
+                  onClick={() =>
+                    navigate(
+                      item.lat && item.lng
+                        ? `/map?focus=${item.lat},${item.lng}&label=${encodeURIComponent(name)}`
+                        : `/map?focusName=${encodeURIComponent(item.location ?? name)}&label=${encodeURIComponent(name)}`
+                    )
+                  }
+                >
+                  <MapPin size={12} /> {isRTL ? 'הצג במפה' : 'Show on map'}
+                </button>
+              )
+            )}
+            {isAdmin && (
+              <>
+                <button
+                  className="admin-btn secondary"
+                  style={{ fontSize: 12, ...(item.approved ? {} : { borderColor: meta.color, color: meta.color }) }}
+                  onClick={() => toggleApproved(item)}
+                >
+                  {item.approved ? <X size={12} /> : <Check size={12} />}
+                  {item.approved ? (isRTL ? 'בטל אישור' : 'Unapprove') : (isRTL ? 'אשר' : 'Approve')}
+                </button>
+                <button className="admin-icon-btn" onClick={() => setEditingId(item.id)} title={isRTL ? 'עריכה' : 'Edit'}>
+                  <Pencil size={13} />
+                </button>
+                <button className="admin-icon-btn delete" onClick={() => remove(item)} title={isRTL ? 'מחיקה' : 'Delete'}>
+                  <Trash2 size={13} />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {groups.map(({ part, items: partItems }) => (
+        <div key={part}>
+          <div className="day-part-heading">
+            <span aria-hidden="true">{DAY_PART_LABELS[part].emoji}</span>
+            {dayPartLabel(part, isRTL)}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {partItems.map((item) => renderItem(item))}
+          </div>
+        </div>
+      ))}
 
       {isAdmin &&
         (adding ? (
@@ -220,7 +228,7 @@ function PlanItemForm({
 }) {
   const [kind, setKind] = useState<PlanItem['kind']>(initial?.kind ?? 'activity');
   const [name, setName] = useState(isRTL ? initial?.nameHe || initial?.name || '' : initial?.name ?? '');
-  const [startTime, setStartTime] = useState(initial?.startTime ?? '');
+  const [dayPart, setDayPart] = useState<DayPart>(initial ? itemDayPart(initial) : 'morning');
   const [duration, setDuration] = useState(initial?.durationMinutes ? String(initial.durationMinutes) : '');
   const [location, setLocation] = useState(initial?.location ?? '');
   const [from, setFrom] = useState(initial?.from ?? '');
@@ -245,7 +253,9 @@ function PlanItemForm({
         kind,
         name: isRTL ? initial?.name || name.trim() : name.trim(),
         nameHe: isRTL ? name.trim() : initial?.nameHe,
-        startTime: startTime || undefined,
+        dayPart,
+        // Drop any legacy clock time — the day part now carries the scheduling.
+        startTime: undefined,
         durationMinutes: duration ? Number(duration) : undefined,
         location: location || undefined,
         from: kind === 'drive' ? from || undefined : undefined,
@@ -273,8 +283,18 @@ function PlanItemForm({
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         {input(name, setName, isRTL ? 'שם' : 'Name')}
-        {input(startTime, setStartTime, isRTL ? 'שעה' : 'Time', 'time')}
         {input(duration, setDuration, isRTL ? 'משך (דקות)' : 'Duration (min)', 'number')}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+        {DAY_PARTS.map((part) => (
+          <button
+            key={part}
+            className={`filter-tab ${dayPart === part ? 'active' : ''}`}
+            onClick={() => setDayPart(part)}
+          >
+            {DAY_PART_LABELS[part].emoji} {dayPartLabel(part, isRTL)}
+          </button>
+        ))}
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         {kind === 'drive' ? (

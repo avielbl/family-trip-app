@@ -5,6 +5,7 @@ import { MapPin, Building2, Star, Layers, UtensilsCrossed } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import type { Hotel, Highlight, Restaurant, PlanItem } from '../types/trip';
 import { cachedCoords, geocodeMany } from '../utils/geocode';
+import { dayPartLabel, itemDayPart } from '../utils/dayParts';
 
 // ─── Place coordinate resolution ─────────────────────────────────────────────
 // Names are resolved asynchronously via the shared geocoder (seed table →
@@ -437,7 +438,7 @@ export default function TripMapPage() {
           .bindPopup(
             `<div style="font-family:Inter,sans-serif;min-width:150px;">
               <strong style="color:#7c3aed">${it.kind === 'meal' ? '🍽' : '★'} ${label}</strong><br/>
-              <span style="font-size:12px;color:#6b7280">Day ${pt.dayIndex + 1}${it.startTime ? ` · ${it.startTime}` : ''}</span>
+              <span style="font-size:12px;color:#6b7280">Day ${pt.dayIndex + 1} · ${dayPartLabel(itemDayPart(it), isRTL)}</span>
               ${it.openingHours ? `<br/><span style="font-size:11px">🕒 ${it.openingHours}</span>` : ''}
               ${it.price ? `<br/><span style="font-size:11px">🎫 ${it.price}</span>` : ''}
               ${it.website ? `<br/><a href="${it.website}" target="_blank" style="font-size:11px">website</a>` : ''}
