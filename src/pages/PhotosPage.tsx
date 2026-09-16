@@ -1,8 +1,9 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Camera, Plus, X, MapPin } from 'lucide-react';
+import { Camera, X, MapPin, ImagePlus } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { savePhoto } from '../firebase/tripService';
+import { downscaleToDataUrl } from '../utils/imageResize';
 
 const TOTAL_DAYS = 12;
 
@@ -28,10 +29,13 @@ const PhotosPage: React.FC = () => {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [saving, setSaving] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [queue, setQueue] = useState<string[]>([]);
   // Day to attach photo to (defaults to today or day 0)
   const [uploadDay] = useState<number>(todayDayIndex >= 0 ? todayDayIndex : 0);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // All photos reverse-chronological, optionally filtered by day
   const feedPhotos = useMemo(() => {
@@ -42,17 +46,41 @@ const PhotosPage: React.FC = () => {
   const getMember = (memberId: string) =>
     config?.familyMembers.find((m) => m.id === memberId);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setPreviewImage(ev.target?.result as string);
+  // Picking from the gallery usually means picking several, so selections are
+  // queued and captioned one at a time rather than collapsed into one photo.
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!files.length) return;
+
+    setPreparing(true);
+    try {
+      const prepared = await Promise.all(files.map((f) => downscaleToDataUrl(f)));
+      const [first, ...rest] = prepared;
+      setQueue(rest);
+      setPreviewImage(first);
       setCaption('');
       setShowPreview(true);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    } catch (err) {
+      console.error('Failed to read photos:', err);
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  /** Move to the next queued photo, or close when the queue is empty. */
+  const advanceQueue = () => {
+    setCaption('');
+    setQueue((rest) => {
+      const [next, ...remaining] = rest;
+      if (next === undefined) {
+        setShowPreview(false);
+        setPreviewImage(null);
+        return [];
+      }
+      setPreviewImage(next);
+      return remaining;
+    });
   };
 
   const handleSavePhoto = async () => {
@@ -67,9 +95,7 @@ const PhotosPage: React.FC = () => {
         caption: caption.trim() || undefined,
         timestamp: new Date().toISOString(),
       });
-      setShowPreview(false);
-      setPreviewImage(null);
-      setCaption('');
+      advanceQueue();
     } catch (err) {
       console.error('Failed to save photo:', err);
     } finally {
@@ -77,10 +103,9 @@ const PhotosPage: React.FC = () => {
     }
   };
 
+  // Skipping one photo should not throw away the rest of the selection.
   const handleCancelPreview = () => {
-    setShowPreview(false);
-    setPreviewImage(null);
-    setCaption('');
+    advanceQueue();
   };
 
   return (
@@ -90,23 +115,51 @@ const PhotosPage: React.FC = () => {
           <Camera size={22} style={{ verticalAlign: 'middle', marginInlineEnd: 6 }} />
           {t('photos.title')}
         </h1>
-        <button
-          className="add-photo-btn-sm"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Plus size={18} />
-          <span>{t('photos.takePhoto')}</span>
-        </button>
+        <div className="photo-add-actions">
+          <button
+            className="add-photo-btn-sm"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={preparing}
+          >
+            <Camera size={17} />
+            <span>{t('photos.takePhoto')}</span>
+          </button>
+          <button
+            className="add-photo-btn-sm secondary"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={preparing}
+          >
+            <ImagePlus size={17} />
+            <span>{isRTL ? 'מהגלריה' : 'From gallery'}</span>
+          </button>
+        </div>
       </div>
 
+      {/* capture sends iOS straight to the camera and removes the photo library
+          from the sheet entirely, so picking from the gallery needs an input
+          without it. multiple, because choosing several at once is the norm. */}
       <input
-        ref={fileInputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
+      {preparing && (
+        <p className="photo-preparing">
+          {isRTL ? 'מכין את התמונות…' : 'Preparing photos…'}
+        </p>
+      )}
 
       {/* Day filter tabs */}
       <div className="photo-day-tabs">
@@ -134,6 +187,11 @@ const PhotosPage: React.FC = () => {
             <button className="photo-preview-close" onClick={handleCancelPreview}>
               <X size={24} />
             </button>
+            {queue.length > 0 && (
+              <div className="photo-queue-count">
+                {isRTL ? `נותרו עוד ${queue.length}` : `${queue.length} more to go`}
+              </div>
+            )}
             <img src={previewImage} alt="Preview" className="photo-preview-img" />
             <input
               type="text"
