@@ -4034,3 +4034,44 @@ body {
   font-weight: 600;
   color: var(--text-secondary);
 }
+
+/* ─── Quiz: auto-advance and save feedback ─── */
+.quiz-next {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Fills across the button for the length of the auto-advance delay, so the
+   move to the next question is visibly coming rather than sudden. */
+.quiz-autobar {
+  position: absolute;
+  inset-inline-start: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.85);
+  animation: quiz-autobar 4.5s linear forwards;
+}
+
+@keyframes quiz-autobar {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quiz-autobar { animation: none; width: 100%; }
+}
+
+.quiz-save-error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--red-500);
+  font-size: 13px;
+}
+
+/* iOS paints its own grey flash over a tapped button, which read as the
+   option "blinking" rather than being chosen. */
+.quiz-option {
+  -webkit-tap-highlight-color: transparent;
+}

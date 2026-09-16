@@ -11,7 +11,12 @@ import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS }
 import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
 import { collectMissingHebrew } from '../utils/translateContent';
-import { PRE_FLIGHT_COUNT, QUESTIONS_PER_DAY } from '../utils/quizSchedule';
+import {
+  PRE_FLIGHT_COUNT,
+  QUESTIONS_PER_DAY,
+  isUsableQuestion,
+  normalizeQuestion,
+} from '../utils/quizSchedule';
 import { GREECE_QUIZ_SEED } from '../data/greeceQuizSeed';
 import type { FamilyMember, QuizQuestion } from '../types/trip';
 import type { AIConfig } from '../types/ai';
@@ -252,8 +257,11 @@ Return ONLY a JSON array of ${QUESTIONS_PER_DAY} items, each exactly: ${shape}`,
           const raw = await generateText(batch.prompt, 8192);
           const parsed = JSON.parse(stripJsonFences(raw)) as QuizQuestion[];
           if (!Array.isArray(parsed) || !parsed.length) throw new Error('empty');
-          for (const q of parsed) {
-            if (!q?.id || !Array.isArray(q.options)) continue;
+          for (const raw of parsed) {
+            // Repair the shape before storing: a correctIndex arriving as a
+            // string marks every answer wrong once it reaches the page.
+            const q = normalizeQuestion(raw);
+            if (!isUsableQuestion(q)) continue;
             await saveQuizQuestion(tripCode, q);
             written++;
           }
