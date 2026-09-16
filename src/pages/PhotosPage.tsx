@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Camera, X, MapPin, ImagePlus } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { savePhoto } from '../firebase/tripService';
+import { storageBucket } from '../firebase/config';
 import { downscaleToDataUrl } from '../utils/imageResize';
 
 const TOTAL_DAYS = 12;
@@ -122,10 +123,12 @@ const PhotosPage: React.FC = () => {
       // running, which is exactly how this looked: the button sat on "..."
       // with nothing to say what went wrong.
       console.error('Failed to save photo:', err);
-      const code = (err as { code?: string })?.code ?? '';
+      const code = (err as { code?: string })?.code ?? 'unknown';
+      // The bucket is named here because an upload stalling at 0% is most often
+      // a bucket that does not exist or is not the one the console shows.
       setPhotoError(
-        (isRTL ? 'ההעלאה נכשלה' : 'Upload failed') + (code ? ` (${code})` : '') + '. ' +
-        (isRTL ? 'נסו שוב.' : 'Try again.')
+        `${isRTL ? 'ההעלאה נכשלה' : 'Upload failed'} — ${code}\n` +
+        `bucket: ${storageBucket || (isRTL ? '(לא מוגדר)' : '(not set)')}`
       );
       setUploadPercent(null);
     } finally {

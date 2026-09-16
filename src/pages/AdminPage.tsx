@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Languages } from 'lucide-react';
+import { Shield, Users, Link, Copy, Check, Save, Plus, Trash2, AlertCircle, Cpu, Loader, Database, HelpCircle, Sparkles, Loader2, FileUp, FileDown, Languages, HardDrive } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useFamilyContext } from '../context/FamilyContext';
 import { claimAdminUid } from '../firebase/authService';
-import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, backfillHebrew } from '../firebase/tripService';
+import { saveTripConfig, seedTripData, saveAIConfigToServer, patchHotelWebsites, saveQuizQuestion, deleteQuizQuestion, backfillHebrew, testStorageAccess } from '../firebase/tripService';
 import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS } from '../firebase/aiService';
 import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
@@ -54,6 +54,9 @@ export default function AdminPage() {
   const [translateBusy, setTranslateBusy] = useState(false);
   const [translateResult, setTranslateResult] = useState('');
   const [translateProgress, setTranslateProgress] = useState('');
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [storageResult, setStorageResult] = useState<string | null>(null);
+  const [storageOk, setStorageOk] = useState(false);
 
   // Greece-only content seeds (legacy) — hidden on other destinations.
   const isGreeceTrip = ((config?.destination ?? '') + (config?.tripName ?? ''))
@@ -345,6 +348,34 @@ Return ONLY a JSON array of ${QUESTIONS_PER_DAY} items, each exactly: ${shape}`,
     }
   }
 
+  // Photo uploads failing give no usable signal on their own — this names the
+  // cause instead of leaving it to be guessed at.
+  async function handleTestStorage() {
+    if (!tripCode) return;
+    setStorageBusy(true);
+    setStorageResult(null);
+    try {
+      const r = await testStorageAccess(tripCode);
+      setStorageOk(r.ok);
+      if (r.ok) {
+        setStorageResult(
+          (isHe ? 'האחסון עובד. bucket: ' : 'Storage works. Bucket: ') + r.bucket
+        );
+      } else {
+        setStorageResult(
+          `${isHe ? 'האחסון נכשל' : 'Storage failed'} — ${r.code}\n` +
+          `bucket: ${r.bucket || (isHe ? '(ריק)' : '(empty)')}\n` +
+          (r.detail ?? '')
+        );
+      }
+    } catch (err) {
+      setStorageOk(false);
+      setStorageResult((err as Error).message);
+    } finally {
+      setStorageBusy(false);
+    }
+  }
+
   function removeMember(idx: number) {
     setMembers(members.filter((_, i) => i !== idx));
   }
@@ -501,6 +532,35 @@ Return ONLY a JSON array of ${QUESTIONS_PER_DAY} items, each exactly: ${shape}`,
           <FileDown size={14} />
           {isHe ? 'ייצוא / ייבוא' : 'Export / Import'}
         </button>
+      </div>
+
+      {/* Name the reason photo uploads fail, rather than leaving it to guesswork */}
+      <div className="admin-section">
+        <div className="admin-section-title">
+          <HardDrive size={16} />
+          {isHe ? 'בדיקת אחסון תמונות' : 'Test photo storage'}
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          {isHe
+            ? 'כותב כמה בתים לאותו נתיב שבו נשמרות תמונות, ומדווח בדיוק מה חזר — הרשאות, bucket חסר או CORS.'
+            : 'Writes a few bytes to the same path photos use and reports exactly what came back — permissions, a missing bucket, or CORS.'}
+        </p>
+        <button className="admin-btn primary" onClick={handleTestStorage} disabled={storageBusy}>
+          {storageBusy ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
+          {storageBusy ? (isHe ? 'בודק...' : 'Testing...') : (isHe ? 'בדוק עכשיו' : 'Test now')}
+        </button>
+        {storageResult && (
+          <pre
+            style={{
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '12px',
+              marginTop: '8px', padding: '8px 10px', borderRadius: '8px',
+              background: 'var(--bg-secondary)',
+              color: storageOk ? 'var(--green-600)' : 'var(--red-500)',
+            }}
+          >
+            {storageResult}
+          </pre>
+        )}
       </div>
 
       {/* Fill in Hebrew for content that only exists in English. New gaps appear

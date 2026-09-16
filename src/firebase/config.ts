@@ -40,6 +40,21 @@ export const db = initializeFirestore(app, {
 
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+/**
+ * Fail an upload in seconds rather than minutes.
+ *
+ * Firebase retries a request that fails at the network level — which is how a
+ * CORS rejection or a missing bucket looks to the SDK — for two minutes by
+ * default, reporting nothing while it does. An upload stuck at 0% with no
+ * error is indistinguishable from a hang, and two minutes is far too long to
+ * wait for a message. These caps surface the real error code quickly.
+ */
+storage.maxUploadRetryTime = 20_000;
+storage.maxOperationRetryTime = 20_000;
+
+/** The bucket actually in use, for diagnostics. Empty means it was never set. */
+export const storageBucket = firebaseConfig.storageBucket;
 export const googleProvider = new GoogleAuthProvider();
 
 export default app;
