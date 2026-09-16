@@ -99,3 +99,25 @@ export async function downscaleToDataUrl(
     return readFileAsDataUrl(file);
   }
 }
+
+/**
+ * A data URL as a Blob.
+ *
+ * Uploading raw bytes rather than the data URL drops the ~33% base64 overhead,
+ * and a resumable upload of a Blob can report progress — which a data-URL
+ * upload cannot, so a slow connection is indistinguishable from a hang.
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, encoded] = dataUrl.split(',');
+  if (!header || encoded === undefined) throw new Error('Not a data URL');
+  const typeMatch = /data:([^;]+)/.exec(header);
+  const contentType = typeMatch?.[1] ?? 'application/octet-stream';
+
+  if (!header.includes(';base64')) {
+    return new Blob([decodeURIComponent(encoded)], { type: contentType });
+  }
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: contentType });
+}
