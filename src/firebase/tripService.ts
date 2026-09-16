@@ -10,8 +10,8 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import type { DocumentData, Unsubscribe } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './config';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage, storageBucket } from './config';
 import { dataUrlToBlob } from '../utils/imageResize';
 import { airportCoords, estimateRouteByGeo, type Coords, type PlaceRef } from '../utils/geocode';
 import { SECTION_COLLECTION, rowKey } from '../utils/tripSnapshot';
@@ -500,6 +500,43 @@ export async function importTripData(
   await batchSave(data.highlights, 'highlights');
   await batchSave(data.restaurants, 'restaurants');
   await batchSave(data.packing, 'packing');
+}
+
+// ─── Storage diagnostics ─────────────────────────────────────────────────────
+/**
+ * Prove whether this trip can write to Firebase Storage at all.
+ *
+ * An upload that sits at 0% could be permissions, a bucket that does not exist,
+ * or CORS, and none of those are distinguishable from the outside. This writes
+ * a few bytes to the same path photos use — so it is covered by the same
+ * storage rule — and reports exactly what came back.
+ */
+export async function testStorageAccess(
+  tripCode: string
+): Promise<{ ok: boolean; bucket: string; code?: string; detail?: string; url?: string }> {
+  const bucket = storageBucket;
+  if (!bucket) {
+    return {
+      ok: false,
+      bucket: '',
+      code: 'config/no-bucket',
+      detail: 'VITE_FIREBASE_STORAGE_BUCKET is empty in this build.',
+    };
+  }
+  // Under photos/ so the existing rule applies; a distinct id so it cannot
+  // collide with a real photo.
+  const probe = ref(storage, `trips/${tripCode}/photos/__storage-check`);
+  try {
+    await uploadBytesResumable(probe, new Blob(['ok'], { type: 'text/plain' }), {
+      contentType: 'text/plain',
+    });
+    const url = await getDownloadURL(probe);
+    await deleteObject(probe).catch(() => {/* leaving the probe behind is harmless */});
+    return { ok: true, bucket, url };
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    return { ok: false, bucket, code: e.code ?? 'unknown', detail: e.message ?? String(err) };
+  }
 }
 
 // ─── Hebrew backfill ─────────────────────────────────────────────────────────

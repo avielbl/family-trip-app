@@ -4157,3 +4157,8 @@ body {
   color: #fecaca;
   font-size: 13px;
 }
+
+.photo-error {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
