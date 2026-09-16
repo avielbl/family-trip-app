@@ -4075,3 +4075,40 @@ body {
 .quiz-option {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ─── Photos: camera and gallery ─── */
+.photo-add-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.add-photo-btn-sm.secondary {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.add-photo-btn-sm:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.photo-preparing {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Shown while working through a multi-photo selection, so it is clear the
+   sheet is not finished when one photo is saved. */
+.photo-queue-count {
+  align-self: center;
+  margin-bottom: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
