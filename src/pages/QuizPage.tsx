@@ -12,6 +12,9 @@ import {
   questionsForDay,
 } from '../utils/quizSchedule';
 
+/** Long enough to read the fun fact before the next question arrives. */
+const AUTO_ADVANCE_MS = 4500;
+
 const QuizPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const {
@@ -40,6 +43,8 @@ const QuizPage: React.FC = () => {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const [answeredNow, setAnsweredNow] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [autoAdvancing, setAutoAdvancing] = useState(false);
 
   const dayQuestions = useMemo(
     () => questionsForDay(quizQuestions, selectedDay),
@@ -111,9 +116,15 @@ const QuizPage: React.FC = () => {
       };
       await saveQuizAnswer(tripCode, answer);
       setAnsweredNow(true);
+      setSaveError('');
     } catch (err) {
+      // Reverting the selection with nothing said made a failed save look like
+      // a tap that simply did not register.
       console.error('Failed to save quiz answer:', err);
       setSelectedOptionIndex(null);
+      setSaveError(
+        isRTL ? 'לא הצלחנו לשמור את התשובה. נסו שוב.' : 'Could not save the answer. Try again.'
+      );
     } finally {
       setSaving(false);
     }
@@ -128,10 +139,44 @@ const QuizPage: React.FC = () => {
     setAnsweredNow(false);
   };
 
-  const goToQuestion = (index: number) => {
+  const goToQuestion = React.useCallback((index: number) => {
+    setAutoAdvancing(false);
     setActiveIndex(index);
     setSelectedOptionIndex(null);
     setAnsweredNow(false);
+    setSaveError('');
+  }, []);
+
+  // Once answered, move on by itself. The delay is there so the fun fact can be
+  // read — that is most of why the quiz exists — and any tap, swipe or dot
+  // cancels it, so nobody is dragged off a screen they are still reading.
+  const hasNext = activeIndex < dayQuestions.length - 1;
+  React.useEffect(() => {
+    if (!answeredNow || !hasNext) return;
+    setAutoAdvancing(true);
+    const id = window.setTimeout(() => goToQuestion(activeIndex + 1), AUTO_ADVANCE_MS);
+    return () => {
+      window.clearTimeout(id);
+      setAutoAdvancing(false);
+    };
+  }, [answeredNow, hasNext, activeIndex, goToQuestion]);
+
+  // Step through the set with a swipe as well as a tap — on a phone that is the
+  // gesture people reach for first. In Hebrew the set reads right-to-left, so
+  // "next" is the swipe towards the start of the line, not away from it.
+  const touchStartX = React.useRef<number | null>(null);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.changedTouches[0]?.clientX ?? null;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartX.current;
+    touchStartX.current = null;
+    if (start === null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? start) - start;
+    if (Math.abs(dx) < 60) return; // ignore taps and scroll wobble
+    const forward = isRTL ? dx > 0 : dx < 0;
+    const next = activeIndex + (forward ? 1 : -1);
+    if (next >= 0 && next < dayQuestions.length) goToQuestion(next);
   };
 
   // Scoreboard: total correct per member
@@ -203,7 +248,7 @@ const QuizPage: React.FC = () => {
           <p>{t('quiz.noQuiz')}</p>
         </div>
       ) : (
-        <div className="quiz-card">
+        <div className="quiz-card" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
           {/* Which question of the day's set this is, and how the set is going */}
           <div className="quiz-set-bar">
             <span className="quiz-set-label">
@@ -247,6 +292,8 @@ const QuizPage: React.FC = () => {
             <Star size={20} className="quiz-star" />
             <p>{isRTL ? currentQuestion.questionHe : currentQuestion.question}</p>
           </div>
+
+          {saveError && <p className="quiz-save-error">{saveError}</p>}
 
           {/* Options */}
           <div className="quiz-options">
@@ -317,10 +364,11 @@ const QuizPage: React.FC = () => {
 
               {/* Move through the set only on a tap — the fun fact is half the
                   point and auto-advancing would snatch it away mid-sentence. */}
-              {activeIndex < dayQuestions.length - 1 ? (
+              {hasNext ? (
                 <button className="quiz-next" onClick={() => goToQuestion(activeIndex + 1)}>
                   {isRTL ? 'לשאלה הבאה' : 'Next question'}
                   <ChevronRight size={16} style={isRTL ? { transform: 'scaleX(-1)' } : undefined} />
+                  {autoAdvancing && <span className="quiz-autobar" />}
                 </button>
               ) : (
                 <div className="quiz-set-done">

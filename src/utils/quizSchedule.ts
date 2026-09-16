@@ -19,6 +19,40 @@ export const PRE_FLIGHT_COUNT = 5;
  */
 export const PRE_FLIGHT_DAY = -1;
 
+/**
+ * Repair a question's shape before it is used.
+ *
+ * correctIndex decides the colour of every option and whether an answer scores,
+ * and it is compared with ===. A model that returns it as "0" rather than 0 —
+ * routine in generated JSON — makes that comparison false for every option, so
+ * the right answer never lights up green and every tap is marked wrong.
+ *
+ * Applied on read as well as on write, so questions already stored with the bad
+ * type are fixed without a migration.
+ */
+export function normalizeQuestion(question: QuizQuestion): QuizQuestion {
+  const options = Array.isArray(question.options) ? question.options.map(String) : [];
+  const optionsHe = Array.isArray(question.optionsHe)
+    ? question.optionsHe.map(String)
+    : options;
+
+  const raw = Number(question.correctIndex);
+  const correctIndex =
+    Number.isInteger(raw) && raw >= 0 && raw < options.length ? raw : 0;
+
+  return { ...question, options, optionsHe, correctIndex };
+}
+
+/** True when a question is usable — anything else should not be saved. */
+export function isUsableQuestion(question: QuizQuestion | null | undefined): boolean {
+  if (!question?.id || typeof question.question !== 'string' || !question.question.trim()) {
+    return false;
+  }
+  if (!Array.isArray(question.options) || question.options.length < 2) return false;
+  const raw = Number(question.correctIndex);
+  return Number.isInteger(raw) && raw >= 0 && raw < question.options.length;
+}
+
 export function isPreFlight(question: QuizQuestion): boolean {
   return question.dayIndex < 0;
 }
@@ -77,7 +111,7 @@ export function questionsForDay(questions: QuizQuestion[], dayIndex: number): Qu
     dayIndex < 0
       ? questions.filter(isPreFlight)
       : questions.filter((q) => q.dayIndex === dayIndex);
-  return [...inDay].sort((a, b) => {
+  return [...inDay].map(normalizeQuestion).sort((a, b) => {
     // Pre-flight sets written as separate days keep their original order.
     if (a.dayIndex !== b.dayIndex) return b.dayIndex - a.dayIndex;
     return a.id.localeCompare(b.id, undefined, { numeric: true });
