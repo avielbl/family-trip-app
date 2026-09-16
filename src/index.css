@@ -3956,3 +3956,81 @@ body {
 [data-theme="dark"] .weather-detail-link {
   color: var(--blue-300);
 }
+
+/* ─── Quiz: sets of questions per day ─── */
+.quiz-set-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.quiz-set-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.quiz-set-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* Each dot is a jump target as well as a progress marker, so a half-finished
+   set can be picked up at the question that was actually missed. */
+.quiz-dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+  cursor: pointer;
+}
+
+.quiz-dot.correct {
+  background: var(--green-500);
+  border-color: var(--green-500);
+}
+
+.quiz-dot.wrong {
+  background: var(--red-400);
+  border-color: var(--red-400);
+}
+
+.quiz-dot.current {
+  outline: 2px solid var(--blue-400);
+  outline-offset: 2px;
+}
+
+.quiz-preflight-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+.quiz-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--brand-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.quiz-set-done {
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
