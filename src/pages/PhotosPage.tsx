@@ -31,6 +31,8 @@ const PhotosPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [queue, setQueue] = useState<string[]>([]);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [photoError, setPhotoError] = useState('');
   // Day to attach photo to (defaults to today or day 0)
   const [uploadDay] = useState<number>(todayDayIndex >= 0 ? todayDayIndex : 0);
 
@@ -68,44 +70,80 @@ const PhotosPage: React.FC = () => {
     }
   };
 
-  /** Move to the next queued photo, or close when the queue is empty. */
+  /**
+   * Move to the next queued photo, or close when the queue is empty.
+   *
+   * Derived from the current queue rather than from inside a setQueue updater:
+   * React may invoke an updater more than once, and updating other state in
+   * there can advance the queue twice and silently skip a photo.
+   */
   const advanceQueue = () => {
+    const [next, ...remaining] = queue;
     setCaption('');
-    setQueue((rest) => {
-      const [next, ...remaining] = rest;
-      if (next === undefined) {
-        setShowPreview(false);
-        setPreviewImage(null);
-        return [];
-      }
+    setUploadPercent(null);
+    setPhotoError('');
+    setQueue(remaining);
+    if (next === undefined) {
+      setShowPreview(false);
+      setPreviewImage(null);
+    } else {
       setPreviewImage(next);
-      return remaining;
-    });
+    }
   };
 
   const handleSavePhoto = async () => {
-    if (!previewImage || !tripCode || !currentMember) return;
+    if (!previewImage || !tripCode) return;
+    if (!currentMember) {
+      // Silently doing nothing here read as a dead button.
+      setPhotoError(
+        isRTL ? 'בחרו קודם מי אתם במסך הבית.' : 'Choose who you are on the home screen first.'
+      );
+      return;
+    }
     setSaving(true);
+    setPhotoError('');
+    setUploadPercent(0);
     try {
-      await savePhoto(tripCode, {
-        id: crypto.randomUUID(),
-        dayIndex: uploadDay,
-        memberId: currentMember.id,
-        imageDataUrl: previewImage,
-        caption: caption.trim() || undefined,
-        timestamp: new Date().toISOString(),
-      });
+      await savePhoto(
+        tripCode,
+        {
+          id: crypto.randomUUID(),
+          dayIndex: uploadDay,
+          memberId: currentMember.id,
+          imageDataUrl: previewImage,
+          caption: caption.trim() || undefined,
+          timestamp: new Date().toISOString(),
+        },
+        setUploadPercent
+      );
       advanceQueue();
     } catch (err) {
+      // An upload that fails silently is indistinguishable from one still
+      // running, which is exactly how this looked: the button sat on "..."
+      // with nothing to say what went wrong.
       console.error('Failed to save photo:', err);
+      const code = (err as { code?: string })?.code ?? '';
+      setPhotoError(
+        (isRTL ? 'ההעלאה נכשלה' : 'Upload failed') + (code ? ` (${code})` : '') + '. ' +
+        (isRTL ? 'נסו שוב.' : 'Try again.')
+      );
+      setUploadPercent(null);
     } finally {
       setSaving(false);
     }
   };
 
   // Skipping one photo should not throw away the rest of the selection.
-  const handleCancelPreview = () => {
-    advanceQueue();
+  const handleSkipPhoto = () => advanceQueue();
+
+  /** Abandon the whole selection, not just the photo on screen. */
+  const handleCancelAll = () => {
+    setQueue([]);
+    setShowPreview(false);
+    setPreviewImage(null);
+    setCaption('');
+    setUploadPercent(null);
+    setPhotoError('');
   };
 
   return (
@@ -184,7 +222,11 @@ const PhotosPage: React.FC = () => {
       {showPreview && previewImage && (
         <div className="photo-preview">
           <div className="photo-preview-content">
-            <button className="photo-preview-close" onClick={handleCancelPreview}>
+            <button
+              className="photo-preview-close"
+              onClick={handleCancelAll}
+              title={isRTL ? 'ביטול הכל' : 'Cancel all'}
+            >
               <X size={24} />
             </button>
             {queue.length > 0 && (
@@ -201,14 +243,35 @@ const PhotosPage: React.FC = () => {
               onChange={(e) => setCaption(e.target.value)}
               dir={isRTL ? 'rtl' : 'ltr'}
             />
-            <button
-              className="add-photo-btn save-btn"
-              onClick={handleSavePhoto}
-              disabled={saving}
-            >
-              <Camera size={20} />
-              <span>{saving ? '...' : t('photos.takePhoto')}</span>
-            </button>
+            {photoError && <p className="photo-error">{photoError}</p>}
+
+            <div className="photo-preview-actions">
+              <button
+                className="add-photo-btn save-btn"
+                onClick={handleSavePhoto}
+                disabled={saving}
+              >
+                <Camera size={20} />
+                <span>
+                  {saving
+                    ? (uploadPercent !== null
+                        ? `${isRTL ? 'מעלה' : 'Uploading'} ${uploadPercent}%`
+                        : (isRTL ? 'מעלה…' : 'Uploading…'))
+                    : (isRTL ? 'הוסף' : 'Add')}
+                </span>
+              </button>
+              {queue.length > 0 && (
+                <button className="photo-skip-btn" onClick={handleSkipPhoto} disabled={saving}>
+                  {isRTL ? 'דלג' : 'Skip'}
+                </button>
+              )}
+            </div>
+
+            {saving && uploadPercent !== null && (
+              <div className="photo-upload-bar">
+                <span style={{ width: `${uploadPercent}%` }} />
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -10,8 +10,9 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import type { DocumentData, Unsubscribe } from 'firebase/firestore';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
+import { dataUrlToBlob } from '../utils/imageResize';
 import { airportCoords, estimateRouteByGeo, type Coords, type PlaceRef } from '../utils/geocode';
 import { SECTION_COLLECTION, rowKey } from '../utils/tripSnapshot';
 import {
@@ -239,11 +240,32 @@ export function subscribePackingItems(
 // Photos
 export async function savePhoto(
   tripCode: string,
-  photo: Omit<PhotoEntry, 'imageUrl'> & { imageDataUrl: string }
+  photo: Omit<PhotoEntry, 'imageUrl'> & { imageDataUrl: string },
+  onProgress?: (percent: number) => void
 ): Promise<void> {
-  // Upload the image to Firebase Storage and store the URL in Firestore
+  // Upload the image to Firebase Storage and store the URL in Firestore.
+  //
+  // Resumable, and sending the decoded bytes rather than the data URL: it drops
+  // the base64 overhead and, more importantly, reports progress. A plain
+  // uploadString gives no signal at all, so a slow or failing upload looked
+  // exactly like the app having hung.
   const storageRef = ref(storage, `trips/${tripCode}/photos/${photo.id}`);
-  await uploadString(storageRef, photo.imageDataUrl, 'data_url');
+  const blob = dataUrlToBlob(photo.imageDataUrl);
+
+  await new Promise<void>((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, blob, { contentType: blob.type });
+    task.on(
+      'state_changed',
+      (snap) => {
+        if (snap.totalBytes > 0) {
+          onProgress?.(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
+        }
+      },
+      reject,
+      () => resolve()
+    );
+  });
+
   const imageUrl = await getDownloadURL(storageRef);
 
   const photoMeta: Partial<typeof photo> = { ...photo };
