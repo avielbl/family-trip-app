@@ -156,11 +156,18 @@ const PhotosPage: React.FC = () => {
           <Camera size={22} style={{ verticalAlign: 'middle', marginInlineEnd: 6 }} />
           {t('photos.title')}
         </h1>
+        {!storageBucket && (
+          <p className="photo-error">
+            {isRTL
+              ? 'העלאת תמונות אינה מוגדרת בגרסה הזו (חסר bucket). ראו הגדרות → בדיקת אחסון.'
+              : 'Photo upload is not configured in this build (no storage bucket). See Admin → Test photo storage.'}
+          </p>
+        )}
         <div className="photo-add-actions">
           <button
             className="add-photo-btn-sm"
             onClick={() => cameraInputRef.current?.click()}
-            disabled={preparing}
+            disabled={preparing || !storageBucket}
           >
             <Camera size={17} />
             <span>{t('photos.takePhoto')}</span>
@@ -168,7 +175,7 @@ const PhotosPage: React.FC = () => {
           <button
             className="add-photo-btn-sm secondary"
             onClick={() => galleryInputRef.current?.click()}
-            disabled={preparing}
+            disabled={preparing || !storageBucket}
           >
             <ImagePlus size={17} />
             <span>{isRTL ? 'מהגלריה' : 'From gallery'}</span>
