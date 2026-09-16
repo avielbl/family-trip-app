@@ -8,21 +8,27 @@ const pkg = JSON.parse(
 ) as { version: string }
 
 /**
- * Every Firebase value the app cannot work without.
+ * The Firebase values this app genuinely cannot work without.
  *
  * A missing one does not fail the build on its own — it ships as an empty
  * string and breaks one feature silently at runtime. That is exactly how photo
  * uploads came to stall at 0% with no error: VITE_FIREBASE_STORAGE_BUCKET was
  * absent from the deploy secrets, so every upload addressed a bucket that did
  * not exist. Far better to refuse to build.
+ *
+ * Deliberately only these three. The other values in a Firebase config object
+ * are not used here and have always been empty in this project:
+ *   - AUTH_DOMAIN     a deployed build uses window.location.host instead, so
+ *                     the sign-in redirect stays on the app's own origin
+ *   - MESSAGING_SENDER_ID  nothing uses Cloud Messaging
+ *   - APP_ID          nothing uses Analytics
+ * Requiring those would block deploys over values no feature reads, which is
+ * how a guard stops being trusted.
  */
 const REQUIRED_ENV = [
   'VITE_FIREBASE_API_KEY',
-  'VITE_FIREBASE_AUTH_DOMAIN',
   'VITE_FIREBASE_PROJECT_ID',
   'VITE_FIREBASE_STORAGE_BUCKET',
-  'VITE_FIREBASE_MESSAGING_SENDER_ID',
-  'VITE_FIREBASE_APP_ID',
 ] as const
 
 export default defineConfig(({ command, mode }) => {
