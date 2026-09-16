@@ -11,6 +11,7 @@ import { getAIConfig, setAIConfig, callAI, PROVIDER_PRESETS, PROVIDER_KEY_URLS }
 import { updateMemberTemplates } from '../firebase/familyService';
 import { generateText, hasAiKey, stripJsonFences } from '../ai';
 import { collectMissingHebrew } from '../utils/translateContent';
+import { PRE_FLIGHT_COUNT, QUESTIONS_PER_DAY } from '../utils/quizSchedule';
 import { GREECE_QUIZ_SEED } from '../data/greeceQuizSeed';
 import type { FamilyMember, QuizQuestion } from '../types/trip';
 import type { AIConfig } from '../types/ai';
@@ -44,6 +45,7 @@ export default function AdminPage() {
   const [quizBusy, setQuizBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [quizError, setQuizError] = useState('');
+  const [quizProgress, setQuizProgress] = useState('');
   const [translateBusy, setTranslateBusy] = useState(false);
   const [translateResult, setTranslateResult] = useState('');
   const [translateProgress, setTranslateProgress] = useState('');
@@ -192,29 +194,87 @@ export default function AdminPage() {
 
   async function handleGenerateQuiz() {
     if (!tripCode || generating || !hasAiKey()) return;
+    if (quizQuestions.length > 0 &&
+        !confirm(isHe
+          ? 'פעולה זו תחליף את כל שאלות החידון הקיימות. להמשיך?'
+          : 'This replaces every existing quiz question. Continue?')) {
+      return;
+    }
     setGenerating(true);
     setQuizError('');
+    setQuizProgress('');
     try {
       const destination = config?.destination ?? config?.tripName ?? '';
-      const prompt = `Create EXACTLY ${totalDays + 3} kid-friendly multiple-choice quiz questions about ${destination} for a family trip.
-First 3 are pre-trip warm-up questions (general destination knowledge): dayIndex -1, -2, -3, ids "qpre1" to "qpre3".
-Then one question per trip day: dayIndex 0 to ${totalDays - 1}, ids "q1" to "q${totalDays}".
-Each question must be bilingual (English + Hebrew) with 4 options and a fun fact.
-Return a JSON array where each item matches exactly this shape:
-{"id":"q1","dayIndex":0,"question":"","questionHe":"","options":["","","",""],"optionsHe":["","","",""],"correctIndex":0,"funFact":"","funFactHe":""}
-Return ONLY valid JSON, no markdown.`;
-      const raw = await generateText(prompt, 8192);
-      const parsed = JSON.parse(stripJsonFences(raw)) as QuizQuestion[];
-      if (!Array.isArray(parsed)) {
-        throw new Error(isHe ? 'תשובת ה-AI אינה מערך תקין' : 'AI response is not a valid array');
+
+      const shape =
+        '{"id":"","dayIndex":0,"question":"","questionHe":"","options":["","","",""],' +
+        '"optionsHe":["","","",""],"correctIndex":0,"funFact":"","funFactHe":""}';
+
+      // One request per set. Asking for every question at once overruns the
+      // response budget on a long trip and comes back truncated.
+      const batches: Array<{ label: string; prompt: string }> = [];
+
+      batches.push({
+        label: isHe ? 'לפני הטיסה' : 'pre-flight',
+        prompt: `Create EXACTLY ${PRE_FLIGHT_COUNT} kid-friendly multiple-choice quiz questions about ${destination}, to be answered BEFORE the family flies out.
+These are warm-up questions on general knowledge of the destination — its geography, language, food, flag, famous sights.
+ids must be "pre-1" to "pre-${PRE_FLIGHT_COUNT}" and dayIndex must be -1 for all of them.
+Each question bilingual (English + Hebrew), 4 options, one correct, plus a fun fact.
+Vary the difficulty so a younger child can get some right.
+Return ONLY a JSON array of ${PRE_FLIGHT_COUNT} items, each exactly: ${shape}`,
+      });
+
+      for (let day = 0; day < totalDays; day++) {
+        const tripDay = days.find((d) => d.dayIndex === day);
+        const where = [tripDay?.location, tripDay?.title].filter(Boolean).join(' — ');
+        batches.push({
+          label: isHe ? `יום ${day + 1}` : `day ${day + 1}`,
+          prompt: `Create EXACTLY ${QUESTIONS_PER_DAY} kid-friendly multiple-choice quiz questions for day ${day + 1} of a family trip to ${destination}.
+${where ? `That day is spent at: ${where}. Tie the questions to that place.` : 'Base them on the destination generally.'}
+ids must be "d${day}-q1" to "d${day}-q${QUESTIONS_PER_DAY}" and dayIndex must be ${day} for all of them.
+Each question bilingual (English + Hebrew), 4 options, one correct, plus a fun fact.
+Make the ${QUESTIONS_PER_DAY} questions cover different topics from each other, and vary the difficulty.
+Return ONLY a JSON array of ${QUESTIONS_PER_DAY} items, each exactly: ${shape}`,
+        });
       }
-      for (const q of parsed) {
-        await saveQuizQuestion(tripCode, q);
+
+      // Clear the old set first, so a shorter regeneration cannot leave
+      // yesterday's questions stranded in days that no longer have them.
+      for (const existing of quizQuestions) {
+        await deleteQuizQuestion(tripCode, existing.id);
+      }
+
+      let written = 0;
+      const failed: string[] = [];
+      for (const [i, batch] of batches.entries()) {
+        setQuizProgress(`${i + 1} / ${batches.length} — ${batch.label}`);
+        try {
+          const raw = await generateText(batch.prompt, 8192);
+          const parsed = JSON.parse(stripJsonFences(raw)) as QuizQuestion[];
+          if (!Array.isArray(parsed) || !parsed.length) throw new Error('empty');
+          for (const q of parsed) {
+            if (!q?.id || !Array.isArray(q.options)) continue;
+            await saveQuizQuestion(tripCode, q);
+            written++;
+          }
+        } catch {
+          // Keep going: one bad set should not cost the whole quiz.
+          failed.push(batch.label);
+        }
+      }
+
+      if (failed.length) {
+        setQuizError(
+          isHe
+            ? `נוצרו ${written} שאלות. נכשלו: ${failed.join(', ')} — אפשר להריץ שוב.`
+            : `Created ${written} questions. Failed: ${failed.join(', ')} — run it again to retry.`
+        );
       }
     } catch (e) {
       setQuizError((e as Error).message);
     } finally {
       setGenerating(false);
+      setQuizProgress('');
     }
   }
 
@@ -675,8 +735,10 @@ Return ONLY valid JSON, no markdown.`;
           >
             {generating ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
             {generating
-              ? (isHe ? 'מייצר...' : 'Generating...')
-              : (isHe ? 'ייצר עם AI' : 'Generate with AI')}
+              ? (isHe ? `מייצר... ${quizProgress}` : `Generating... ${quizProgress}`)
+              : (isHe
+                  ? `ייצר עם AI (${PRE_FLIGHT_COUNT} + ${QUESTIONS_PER_DAY} ליום)`
+                  : `Generate with AI (${PRE_FLIGHT_COUNT} + ${QUESTIONS_PER_DAY}/day)`)}
           </button>
         </div>
 

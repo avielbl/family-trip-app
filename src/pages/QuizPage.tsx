@@ -1,9 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { HelpCircle, CheckCircle, XCircle, Trophy, Star, Lock } from 'lucide-react';
+import { HelpCircle, CheckCircle, XCircle, Trophy, Star, Lock, Plane, ChevronRight } from 'lucide-react';
 import { useTripContext } from '../context/TripContext';
 import { saveQuizAnswer } from '../firebase/tripService';
 import type { QuizAnswer } from '../types/trip';
+import {
+  PRE_FLIGHT_DAY,
+  isDayUnlocked as isUnlocked,
+  isPreFlightOpen,
+  progressForDay,
+  questionsForDay,
+} from '../utils/quizSchedule';
 
 const QuizPage: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -19,40 +26,51 @@ const QuizPage: React.FC = () => {
   } = useTripContext();
   const isRTL = i18n.language === 'he';
 
-  const hasPreTrip = quizQuestions.some((q) => q.dayIndex < 0);
-  const firstPreTripDay = hasPreTrip
-    ? Math.max(...quizQuestions.filter((q) => q.dayIndex < 0).map((q) => q.dayIndex))
-    : null;
-  const [selectedDay, setSelectedDay] = useState<number>(
-    todayDayIndex >= 0 ? todayDayIndex : hasPreTrip ? -1 : 0
-  );
-  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
+  const tripStart = config ? new Date(config.startDate) : null;
+  const preFlightQuestions = questionsForDay(quizQuestions, PRE_FLIGHT_DAY);
+  const preFlightOpen = isPreFlightOpen(tripStart);
+  const hasPreFlight = preFlightQuestions.length > 0;
 
-  // Questions load async: before the trip starts, land on the first pre-trip
-  // question once it arrives (the mount default couldn't see it yet).
-  const autoSelectedPreTrip = React.useRef(false);
-  React.useEffect(() => {
-    if (todayDayIndex < 0 && firstPreTripDay !== null && !autoSelectedPreTrip.current) {
-      autoSelectedPreTrip.current = true;
-      setSelectedDay(firstPreTripDay);
-    }
-  }, [todayDayIndex, firstPreTripDay]);
+  // Land on today's set during the trip; before it, on the pre-flight set.
+  const [selectedDay, setSelectedDay] = useState<number>(
+    todayDayIndex >= 0 ? todayDayIndex : hasPreFlight ? PRE_FLIGHT_DAY : 0
+  );
+  // Which question within the selected day's set is on screen.
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const [answeredNow, setAnsweredNow] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Date-lock: each trip day's question unlocks on its actual date, derived
-  // from the active trip's start date (works for any trip, not just Greece).
-  const tripStart = config ? new Date(config.startDate) : null;
-  const isDayUnlocked = (dayIndex: number): boolean => {
-    if (dayIndex < 0) return true; // pre-trip questions are always open
-    if (!tripStart) return true;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const unlockDate = new Date(tripStart);
-    unlockDate.setDate(unlockDate.getDate() + dayIndex);
-    unlockDate.setHours(0, 0, 0, 0);
-    return today >= unlockDate;
-  };
+  const dayQuestions = useMemo(
+    () => questionsForDay(quizQuestions, selectedDay),
+    [quizQuestions, selectedDay]
+  );
+  const progress = useMemo(
+    () => progressForDay(dayQuestions, quizAnswers, currentMember?.id),
+    [dayQuestions, quizAnswers, currentMember]
+  );
+
+  // Questions arrive asynchronously, so the set for a day can appear after the
+  // page has already settled on it. Once it does, open the first one still
+  // unanswered rather than starting again from the top.
+  const settledFor = React.useRef<string>('');
+  React.useEffect(() => {
+    const key = `${selectedDay}:${dayQuestions.length}:${currentMember?.id ?? ''}`;
+    if (settledFor.current === key || !dayQuestions.length) return;
+    settledFor.current = key;
+    setActiveIndex(progress.firstUnanswered === -1 ? 0 : progress.firstUnanswered);
+  }, [selectedDay, dayQuestions.length, currentMember, progress.firstUnanswered]);
+
+  // Before the trip, drop onto the pre-flight set once it loads.
+  const autoSelectedPreFlight = React.useRef(false);
+  React.useEffect(() => {
+    if (todayDayIndex < 0 && hasPreFlight && preFlightOpen && !autoSelectedPreFlight.current) {
+      autoSelectedPreFlight.current = true;
+      setSelectedDay(PRE_FLIGHT_DAY);
+    }
+  }, [todayDayIndex, hasPreFlight, preFlightOpen]);
+
+  const isDayUnlocked = (dayIndex: number) => isUnlocked(tripStart, dayIndex);
   const getUnlockDate = (dayIndex: number): string => {
     if (!tripStart) return '';
     const d = new Date(tripStart);
@@ -60,8 +78,7 @@ const QuizPage: React.FC = () => {
     return d.toLocaleDateString(isRTL ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short' });
   };
 
-  // Current question for selected day
-  const currentQuestion = quizQuestions.find((q) => q.dayIndex === selectedDay);
+  const currentQuestion = dayQuestions[activeIndex] ?? null;
 
   // Check if current member already answered this question
   const existingAnswer = useMemo(() => {
@@ -105,6 +122,14 @@ const QuizPage: React.FC = () => {
   // When changing day, reset local state
   const handleDayChange = (day: number) => {
     setSelectedDay(day);
+    settledFor.current = '';
+    setActiveIndex(0);
+    setSelectedOptionIndex(null);
+    setAnsweredNow(false);
+  };
+
+  const goToQuestion = (index: number) => {
+    setActiveIndex(index);
     setSelectedOptionIndex(null);
     setAnsweredNow(false);
   };
@@ -132,19 +157,15 @@ const QuizPage: React.FC = () => {
 
       {/* Day selector tabs — pre-trip (⭐, always open) first, then trip days */}
       <div className="day-tabs">
-        {quizQuestions
-          .filter((q) => q.dayIndex < 0)
-          .sort((a, b) => b.dayIndex - a.dayIndex)
-          .map((q) => (
-            <button
-              key={q.dayIndex}
-              className={`day-tab pre-trip ${selectedDay === q.dayIndex ? 'active' : ''}`}
-              onClick={() => handleDayChange(q.dayIndex)}
-              title={isRTL ? 'לפני הטיול' : 'Pre-trip'}
-            >
-              ⭐{-q.dayIndex}
-            </button>
-          ))}
+        {hasPreFlight && (
+          <button
+            className={`day-tab pre-trip ${selectedDay === PRE_FLIGHT_DAY ? 'active' : ''} ${!preFlightOpen ? 'locked' : ''}`}
+            onClick={() => handleDayChange(PRE_FLIGHT_DAY)}
+            title={isRTL ? 'לפני הטיסה' : 'Before the flight'}
+          >
+            {preFlightOpen ? <Plane size={13} /> : <Lock size={12} />}
+          </button>
+        )}
         {Array.from({ length: totalDays }, (_, i) => (
           <button
             key={i}
@@ -167,9 +188,13 @@ const QuizPage: React.FC = () => {
         <div className="empty-state">
           <Lock size={48} strokeWidth={1} />
           <p>
-            {isRTL
-              ? `החידון של יום ${selectedDay + 1} ייפתח ב־${getUnlockDate(selectedDay)} 🔒`
-              : `Day ${selectedDay + 1}'s quiz unlocks on ${getUnlockDate(selectedDay)} 🔒`}
+            {selectedDay < 0
+              ? (isRTL
+                  ? 'שאלות הטרום-טיסה נסגרו בתום היום הראשון ✈️'
+                  : 'The pre-flight questions closed at the end of day 1 ✈️')
+              : (isRTL
+                  ? `החידון של יום ${selectedDay + 1} ייפתח ב־${getUnlockDate(selectedDay)} 🔒`
+                  : `Day ${selectedDay + 1}'s quiz unlocks on ${getUnlockDate(selectedDay)} 🔒`)}
           </p>
         </div>
       ) : !currentQuestion ? (
@@ -179,13 +204,47 @@ const QuizPage: React.FC = () => {
         </div>
       ) : (
         <div className="quiz-card">
+          {/* Which question of the day's set this is, and how the set is going */}
+          <div className="quiz-set-bar">
+            <span className="quiz-set-label">
+              {selectedDay < 0
+                ? (isRTL ? '✈️ לפני הטיסה' : '✈️ Before the flight')
+                : (isRTL ? `יום ${selectedDay + 1}` : `Day ${selectedDay + 1}`)}
+              {' · '}
+              {isRTL
+                ? `שאלה ${activeIndex + 1} מתוך ${dayQuestions.length}`
+                : `Question ${activeIndex + 1} of ${dayQuestions.length}`}
+            </span>
+            <span className="quiz-set-dots">
+              {dayQuestions.map((q, i) => {
+                const answer = currentMember
+                  ? quizAnswers.find((a) => a.memberId === currentMember.id && a.questionId === q.id)
+                  : undefined;
+                const state = answer ? (answer.correct ? 'correct' : 'wrong') : 'todo';
+                return (
+                  <button
+                    key={q.id}
+                    className={`quiz-dot ${state} ${i === activeIndex ? 'current' : ''}`}
+                    onClick={() => goToQuestion(i)}
+                    aria-label={
+                      isRTL ? `שאלה ${i + 1}` : `Question ${i + 1}`
+                    }
+                  />
+                );
+              })}
+            </span>
+          </div>
+
+          {selectedDay < 0 && preFlightOpen && (
+            <p className="quiz-preflight-note">
+              {isRTL
+                ? 'אפשר לענות עד סוף היום הראשון של הטיול.'
+                : 'Answerable until the end of the first day of the trip.'}
+            </p>
+          )}
+
           <div className="quiz-question">
             <Star size={20} className="quiz-star" />
-            <h2>
-              {selectedDay < 0
-                ? (isRTL ? `שאלת חימום ${-selectedDay} ⭐` : `Warm-up question ${-selectedDay} ⭐`)
-                : t('quiz.question', { day: selectedDay + 1 })}
-            </h2>
             <p>{isRTL ? currentQuestion.questionHe : currentQuestion.question}</p>
           </div>
 
@@ -255,6 +314,23 @@ const QuizPage: React.FC = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Move through the set only on a tap — the fun fact is half the
+                  point and auto-advancing would snatch it away mid-sentence. */}
+              {activeIndex < dayQuestions.length - 1 ? (
+                <button className="quiz-next" onClick={() => goToQuestion(activeIndex + 1)}>
+                  {isRTL ? 'לשאלה הבאה' : 'Next question'}
+                  <ChevronRight size={16} style={isRTL ? { transform: 'scaleX(-1)' } : undefined} />
+                </button>
+              ) : (
+                <div className="quiz-set-done">
+                  {progress.answered >= dayQuestions.length
+                    ? (isRTL
+                        ? `סיימתם! ${progress.correct} מתוך ${dayQuestions.length} נכונות 🎉`
+                        : `Set complete — ${progress.correct} of ${dayQuestions.length} correct 🎉`)
+                    : (isRTL ? 'נשארו שאלות שלא נענו' : 'Some questions are still unanswered')}
+                </div>
+              )}
             </div>
           )}
         </div>
