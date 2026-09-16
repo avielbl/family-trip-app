@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Mountain } from 'lucide-react';
+import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Mountain, RefreshCw, ExternalLink } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { useTripContext } from '../context/TripContext';
 import { geocode as geocodeCity } from '../utils/geocode';
@@ -106,10 +106,41 @@ function WeatherIcon({ code, size = 20 }: { code: number; size?: number }) {
   return <CloudRain size={size} color="#818cf8" />;
 }
 
+// ─── Source and freshness ─────────────────────────────────────────────────────
+
+/**
+ * Where the numbers come from. Open-Meteo serves forecasts built from national
+ * weather-service models (among them DWD ICON, NOAA GFS, Météo-France AROME and
+ * ECMWF), which is why it is used here rather than a scraped or hand-entered
+ * feed. Attribution is shown in the UI so the reading is traceable.
+ */
+const WEATHER_SOURCE = {
+  name: 'Open-Meteo',
+  url: 'https://open-meteo.com/',
+  api: 'https://api.open-meteo.com/v1/forecast',
+};
+
+/**
+ * A fuller forecast for one point — hour by hour, several models — for when the
+ * daily summary here is not enough. Coordinate-addressed so it works for any
+ * destination without a per-place lookup.
+ */
+function detailedForecastUrl(lat: number, lng: number): string {
+  return `https://www.windy.com/?${lat.toFixed(3)},${lng.toFixed(3)},9`;
+}
+
+/**
+ * How old a forecast may get before it is refetched. Nothing refreshes a page
+ * that is simply left open — and this app is installed to home screens, where
+ * that is the norm — so returning to it after a day would otherwise show
+ * yesterday's forecast with no sign it was stale.
+ */
+const MAX_FORECAST_AGE_MS = 3 * 60 * 60 * 1000;
+
 // ─── Fetch weather ────────────────────────────────────────────────────────────
 
 async function fetchWeather(lat: number, lng: number): Promise<DailyWeather[]> {
-  const url = new URL('https://api.open-meteo.com/v1/forecast');
+  const url = new URL(WEATHER_SOURCE.api);
   url.searchParams.set('latitude', String(lat));
   url.searchParams.set('longitude', String(lng));
   url.searchParams.set(
@@ -119,7 +150,9 @@ async function fetchWeather(lat: number, lng: number): Promise<DailyWeather[]> {
   url.searchParams.set('timezone', 'auto');
   url.searchParams.set('forecast_days', '14');
 
-  const res = await fetch(url.toString());
+  // Bypass the HTTP cache: a stale-but-valid response would silently defeat
+  // the refresh the caller just asked for.
+  const res = await fetch(url.toString(), { cache: 'no-cache' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
 
@@ -144,6 +177,8 @@ export default function WeatherPage() {
   const [forecasts, setForecasts] = useState<LocationForecast[]>([]);
   const [skiForecast, setSkiForecast] = useState<SkiForecast | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Extra locations added via AI chat (stored in localStorage)
   const [extraLocations] = useState<Array<{ city: string; lat?: number; lng?: number }>>(() => {
@@ -248,13 +283,30 @@ export default function WeatherPage() {
         setSkiForecast(null);
       }
 
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setFetchedAt(new Date());
+        setLoading(false);
+      }
     };
     fetchAll();
     return () => {
       cancelled = true;
     };
-  }, [wantedLocations, isRTL]);
+  }, [wantedLocations, isRTL, reloadKey]);
+
+  // An installed app is rarely reloaded — it is reopened. Refetch when the page
+  // becomes visible again and the forecast has gone stale, so coming back to it
+  // tomorrow shows tomorrow's forecast rather than yesterday's.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!fetchedAt) return;
+      if (Date.now() - fetchedAt.getTime() < MAX_FORECAST_AGE_MS) return;
+      setReloadKey((k) => k + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchedAt]);
 
   // Filter days within trip window (or nearby)
   function filterTripDays(days: DailyWeather[]): DailyWeather[] {
@@ -295,6 +347,31 @@ export default function WeatherPage() {
         </p>
       )}
 
+      {/* Where the numbers come from and how current they are. */}
+      <div className="weather-provenance">
+        <span>
+          {isRTL ? 'מקור: ' : 'Source: '}
+          <a href={WEATHER_SOURCE.url} target="_blank" rel="noreferrer noopener">
+            {WEATHER_SOURCE.name}
+          </a>
+        </span>
+        {fetchedAt && (
+          <span className="weather-updated">
+            {isRTL
+              ? `עודכן ${format(fetchedAt, 'd MMM, HH:mm')}`
+              : `Updated ${format(fetchedAt, 'MMM d, HH:mm')}`}
+          </span>
+        )}
+        <button
+          className="weather-refresh"
+          onClick={() => setReloadKey((k) => k + 1)}
+          disabled={loading}
+        >
+          <RefreshCw size={13} />
+          {isRTL ? 'רענון' : 'Refresh'}
+        </button>
+      </div>
+
       {/* ─── Location Forecasts ─────────────────────────────── */}
       {forecasts.map((fc) => {
         const tripDays = filterTripDays(fc.days);
@@ -316,6 +393,15 @@ export default function WeatherPage() {
                 </span>
               )}
             </div>
+            <a
+              className="weather-detail-link"
+              href={detailedForecastUrl(fc.lat, fc.lng)}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              <ExternalLink size={12} />
+              {isRTL ? 'תחזית מפורטת שעה-שעה' : 'Hour-by-hour forecast'}
+            </a>
 
             {fc.error ? (
               <p className="weather-error">
