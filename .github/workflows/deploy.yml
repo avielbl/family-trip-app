@@ -10,6 +10,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need the previous commit to compare the version against.
+          fetch-depth: 2
+
+      # The version is shown in the app footer and is how anyone tells which
+      # build their device actually has — an installed PWA can keep serving a
+      # cached bundle after a deploy. Shipping app changes without raising it
+      # makes a stale install indistinguishable from a working one.
+      - name: Version must be bumped with app changes
+        run: |
+          set -euo pipefail
+          if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+            echo "No previous commit to compare against — skipping."
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^ HEAD -- src public package.json | wc -l)
+          if [ "$changed" -eq 0 ]; then
+            echo "No app changes in this push — version bump not required."
+            exit 0
+          fi
+          previous=$(git show HEAD^:package.json | jq -r .version)
+          current=$(jq -r .version package.json)
+          if [ "$previous" = "$current" ]; then
+            echo "::error::App files changed but package.json version is still $current."
+            echo "Raise it — patch for a fix, minor for anything a user would notice."
+            exit 1
+          fi
+          echo "Version $previous -> $current"
 
       - uses: actions/setup-node@v4
         with:
